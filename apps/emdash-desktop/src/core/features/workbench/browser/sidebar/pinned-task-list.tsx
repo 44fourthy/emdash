@@ -15,12 +15,7 @@ export const SidebarPinnedTaskList = observer(function SidebarPinnedTaskList() {
       </div>
       <SidebarMenu className="px-3 pb-2">
         {entries.map(({ projectId, taskId }) => (
-          <SidebarTaskItem
-            key={`${projectId}:${taskId}`}
-            projectId={projectId}
-            taskId={taskId}
-            rowVariant="pinned"
-          />
+          <SidebarTaskItem key={`${projectId}:${taskId}`} projectId={projectId} taskId={taskId} />
         ))}
       </SidebarMenu>
     </SidebarGroup>

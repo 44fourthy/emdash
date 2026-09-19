@@ -121,7 +121,7 @@ export const SidebarSectionHeader = observer(function SidebarSectionHeader({
         )}
         <SidebarMenuAction
           aria-label={toggleLabel}
-          className="truncate font-medium text-foreground-tertiary-passive select-none"
+          className="truncate font-medium text-foreground-tertiary-muted select-none"
           onClick={(event) => {
             event.stopPropagation();
             store.toggleSectionCollapsed(sectionId);
