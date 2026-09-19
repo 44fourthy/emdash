@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ChatMessage, TranscriptTurn } from '@/model';
 import { applyTurnEvent } from '@/stories/_harness/turn-reducer';
 import { createTranscript } from './transcript';
@@ -14,6 +14,14 @@ function turn(id: string, seq: number, ...items: ChatMessage[]): TranscriptTurn 
     initiator: items.some((item) => item.role === 'user') ? 'user' : 'agent',
     items: items as TranscriptTurn['items'],
   };
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+    for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
 }
 
 function drive(
@@ -126,6 +134,42 @@ describe('activeTurn', () => {
     expect(tx.state.activeTurnSnapshot!.items[0].id).toBe('m1');
     expect((tx.state.activeTurnSnapshot!.items[0] as ChatMessage).text).toBe('Hello world');
     expect((ref1 as ChatMessage).text).toBe('Hello world');
+  });
+
+  it('owns frozen source snapshots without structured-cloning streaming text', () => {
+    const cloneSpy = vi.spyOn(globalThis, 'structuredClone');
+    try {
+      const tx = createTranscript();
+      const first = deepFreeze(
+        turn('active', 0, {
+          kind: 'message',
+          id: 'm1',
+          seq: 0,
+          role: 'assistant',
+          text: 'x'.repeat(1024 * 1024),
+        })
+      );
+      const second = deepFreeze(
+        turn('active', 0, {
+          kind: 'message',
+          id: 'm1',
+          seq: 0,
+          role: 'assistant',
+          text: `${(first.items[0] as ChatMessage).text}y`,
+        })
+      );
+
+      tx.activeTurn.set(first, 'generating');
+      tx.activeTurn.set(second, 'generating');
+
+      expect((tx.activeTurn.get()!.items[0] as ChatMessage).text).toBe(
+        (second.items[0] as ChatMessage).text
+      );
+      expect((first.items[0] as ChatMessage).text).toHaveLength(1024 * 1024);
+      expect(cloneSpy).not.toHaveBeenCalled();
+    } finally {
+      cloneSpy.mockRestore();
+    }
   });
 
   it('commit moves the active turn into committed turns and clears active state', () => {

@@ -99,6 +99,27 @@ function finalizeCompatItem(item: ChatItem): ChatItem {
   return item;
 }
 
+/**
+ * Give the Solid store ownership of every mutable container in a transcript.
+ *
+ * Transcript snapshots are JSON-shaped data. Their large payloads are immutable
+ * strings, so sharing those scalars is safe and avoids structuredClone copying
+ * the entire accumulated response on every streamed update.
+ */
+function cloneTranscriptContainers(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(cloneTranscriptContainers);
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [key, cloneTranscriptContainers(child)])
+    );
+  }
+  return value;
+}
+
+function ownTranscriptTurn(turn: TranscriptTurn): TranscriptTurn {
+  return cloneTranscriptContainers(turn) as TranscriptTurn;
+}
+
 function assertOrderedTurns(turns: readonly TranscriptTurn[], source: string): void {
   if (!import.meta.env.DEV) return;
   for (let i = 1; i < turns.length; i++) {
@@ -273,7 +294,7 @@ export function createTranscript(): TranscriptApi {
         if (live.activeTurn && live.activeTurn.id !== turn?.id) {
           // Preserve exactly what was observed: settlement and running tool outcomes
           // are facts only the runtime can supply, not inferred from a handoff.
-          const outgoing = structuredClone(unwrap(live.activeTurn));
+          const outgoing = ownTranscriptTurn(unwrap(live.activeTurn));
           setRetained((previous) => [
             ...previous.filter((entry) => entry.id !== outgoing.id),
             outgoing,
@@ -284,8 +305,9 @@ export function createTranscript(): TranscriptApi {
         } else {
           assertOrderedItems(turn);
           setLive('turnStatus', status ?? 'generating');
-          // Own the mutable Solid store; never reconcile into a source/Wire snapshot.
-          setLive('activeTurn', reconcile(structuredClone(unwrap(turn)), { key: 'id' }));
+          // Own the mutable containers; never reconcile into a source/Wire snapshot.
+          // Immutable strings are intentionally shared instead of copied.
+          setLive('activeTurn', reconcile(ownTranscriptTurn(unwrap(turn)), { key: 'id' }));
         }
       });
     },

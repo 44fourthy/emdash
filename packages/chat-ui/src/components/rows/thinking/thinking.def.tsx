@@ -27,6 +27,24 @@ export const THINKING_VARS: ThinkingVars = {
   windowH: 72,
 };
 
+const ACTIVE_THINKING_PREVIEW_MAX_CHARS = 8 * 1024;
+
+/**
+ * A collapsed active-thinking row only exposes a 72px tail preview. Keep its
+ * parsed/layout DOM bounded as the reasoning transcript grows; expanding the
+ * row still opts into rendering the complete text.
+ */
+export function thinkingBodyText(item: ChatThinking, expanded: boolean): string {
+  const text = item.text ?? '';
+  if (expanded || item.status !== 'thinking' || text.length <= ACTIVE_THINKING_PREVIEW_MAX_CHARS) {
+    return text;
+  }
+
+  const minimumStart = text.length - ACTIVE_THINKING_PREVIEW_MAX_CHARS;
+  const paragraphStart = text.indexOf('\n\n', minimumStart);
+  return text.slice(paragraphStart >= 0 ? paragraphStart + 2 : minimumStart);
+}
+
 function thinkingHeaderH(ctx: MeasureCtx): number {
   return ctx.theme.fonts.body.lineHeight + HEADER_ROW_EXTRA_H;
 }
@@ -88,7 +106,9 @@ export function thinkingMeasure(item: ChatThinking, ctx: MeasureCtx, vars: Think
 
   if (!isExpanded && item.status !== 'thinking') return headerH;
 
-  const blocks = flattenBlockHeadings(ctx.caches.parseBlocks(item.id, item.text ?? ''));
+  const blocks = flattenBlockHeadings(
+    ctx.caches.parseBlocks(item.id, thinkingBodyText(item, isExpanded))
+  );
   const body = layoutThinkingBody(blocks, ctx, vars.padY);
 
   if (!isExpanded) return headerH + vars.windowH;
@@ -111,7 +131,7 @@ export function ThinkingUnitRender(props: {
     const ctx = mCtx();
     if (!ctx) return null;
     const blocks = flattenBlockHeadings(
-      ctx.caches.parseBlocks(props.data.id, props.data.text ?? '')
+      ctx.caches.parseBlocks(props.data.id, thinkingBodyText(props.data, isExpanded()))
     );
     return layoutThinkingBody(blocks, ctx, props.vars.padY);
   });
