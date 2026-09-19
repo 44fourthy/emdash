@@ -8,11 +8,19 @@ import { getChatUiRuntime } from './chat-ui-runtime';
 let shared: ChatContext | null = null;
 let didPreloadIssueMentionIcons = false;
 
+const OPEN_DESIGN_FONT_STACK = [
+  'Albert Sans Variable',
+  'PingFang SC',
+  'Microsoft YaHei',
+  'sans-serif',
+];
+
 const OPEN_DESIGN_CHAT_CONFIG: ChatConfig = {
   ...DEFAULT_CONFIG,
   fonts: {
     ...DEFAULT_CONFIG.fonts,
-    sans: ['Albert Sans Variable', 'PingFang SC', 'Microsoft YaHei', 'sans-serif'],
+    sans: OPEN_DESIGN_FONT_STACK,
+    mono: OPEN_DESIGN_FONT_STACK,
   },
 };
 

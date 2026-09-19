@@ -259,6 +259,7 @@ export type ParseCaches = {
 
 export type ChatCaches = SharedCaches & ParseCaches;
 
+const RICH_INLINE_CACHE_MAX = 1_000;
 const HIGHLIGHT_CACHE_MAX = 200;
 const DIFF_CACHE_MAX = 100;
 const MERMAID_CACHE_MAX = 100;
@@ -292,10 +293,10 @@ export function createSharedCaches(highlighter?: ChatHighlighter): SharedCaches 
   return {
     prepareRichInline(items) {
       const key = richInlineKey(items);
-      const cached = richInlineCache.get(key);
+      const cached = lruGet(richInlineCache, key);
       if (cached) return cached;
       const prepared = rawPrepareRichInline(items);
-      richInlineCache.set(key, prepared);
+      lruSet(richInlineCache, key, prepared, RICH_INLINE_CACHE_MAX);
       return prepared;
     },
 

@@ -3,7 +3,6 @@ import { observer } from 'mobx-react-lite';
 import React from 'react';
 import { settingsViewDef } from '@core/features/settings/contributions/views';
 import { BoundShortcut } from '@core/primitives/keybindings/browser/shortcut';
-import { WORKBENCH_BOTTOM_BAR_HEIGHT_PX } from '@core/primitives/layouts/api/workbench-layout';
 import {
   isCurrentView,
   useNavigate,
@@ -23,7 +22,6 @@ import {
 } from './sidebar-primitives';
 import { SidebarSpace } from './sidebar-space';
 import { SidebarVirtualList } from './sidebar-virtual-list';
-import { UpdateSection } from './update-section';
 import { useSidebarDrop } from './use-sidebar-drop';
 
 export const LeftSidebar: React.FC = observer(function LeftSidebar() {
@@ -80,12 +78,6 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
             </SidebarMenuButton>
           </SidebarMenu>
         </SidebarFooter>
-        <div
-          className="flex shrink-0 items-center justify-end border-t border-border px-3"
-          style={{ height: WORKBENCH_BOTTOM_BAR_HEIGHT_PX }}
-        >
-          <UpdateSection />
-        </div>
       </SidebarContainer>
     </div>
   );

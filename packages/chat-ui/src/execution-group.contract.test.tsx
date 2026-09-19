@@ -140,7 +140,7 @@ async function mountLiveGroupedTurn() {
   });
 
   await nextPaint();
-  const header = host.querySelector<HTMLElement>('[data-collapse-id="turn-live:execution:hide"]');
+  const header = host.querySelector<HTMLElement>('[data-collapse-id="turn-live:execution"]');
   if (!header) throw new Error('Live execution group header did not render');
   return { header, host, state, turn };
 }
@@ -274,11 +274,13 @@ describe('execution group contract', () => {
     expect(host.textContent).toContain('The final answer remains visible.');
   });
 
-  it('anchors a live disclosure by its stable group id as the turn settles', async () => {
+  it('anchors and preserves an explicitly opened live disclosure as the turn settles', async () => {
     const { header, host, state, turn } = await mountLiveGroupedTurn();
 
-    expect(header.getAttribute('aria-expanded')).toBe('true');
+    expect(header.getAttribute('aria-expanded')).toBe('false');
     header.click();
+    await nextPaint();
+    expect(header.getAttribute('aria-expanded')).toBe('true');
     expect(state.scroll.get()).toMatchObject({
       kind: 'anchor',
       itemId: 'turn-live:execution',
@@ -316,7 +318,7 @@ describe('execution group contract', () => {
     const settledHeader = host.querySelector<HTMLElement>(
       '[data-collapse-id="turn-live:execution"]'
     );
-    expect(settledHeader?.getAttribute('aria-expanded')).toBe('false');
+    expect(settledHeader?.getAttribute('aria-expanded')).toBe('true');
     expect(host.textContent).toContain('Inspection complete.');
     expect(state.scroll.get()).toMatchObject({
       kind: 'anchor',

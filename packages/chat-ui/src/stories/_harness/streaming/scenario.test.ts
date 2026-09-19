@@ -208,6 +208,7 @@ describe('streamDiff', () => {
         },
         observe: () => false,
         applyPage: () => true,
+        applyLatestPage: () => true,
         needsHistory: false,
         findItemById: () => undefined,
         reset: () => {},

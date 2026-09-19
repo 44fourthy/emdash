@@ -3,6 +3,7 @@ import { formatHostRef } from '@emdash/core/primitives/host/api';
 import type {
   AttachmentMimeType,
   AttachmentRef,
+  HistoryPage,
   PromptAttachment,
   PromptInput,
   QueuedPrompt,
@@ -70,6 +71,7 @@ export interface AgentAffordances {
 type StoredPromptAttachment = Extract<PromptAttachment, { type: 'attachment' }>;
 
 const draftAttachmentDataUrlCache = new Map<string, string>();
+const ACP_RENDER_HISTORY_LIMIT = 100;
 
 export type AcpPromptAttachment = {
   ref: StoredPromptAttachment;
@@ -686,7 +688,7 @@ export class AcpChatStore {
         this._subscribeLiveSession(attachedSession);
       });
 
-      const history = await attachedSession.loadHistory(undefined, 100);
+      const history = await attachedSession.loadHistory(undefined, ACP_RENDER_HISTORY_LIMIT);
       if (this._disposed || this._historyEpoch !== epoch || this.session !== attachedSession)
         return;
       if (!history.success) throw new AcpStartError(history.error);
@@ -711,7 +713,7 @@ export class AcpChatStore {
       if (this._disposed || this._historyEpoch !== epoch || this.session !== attachedSession)
         return;
       runInAction(() => {
-        const applied = this.chatState.transcript.applyPage(history.data);
+        const applied = this._applyLatestHistoryPage(history.data);
         if (applied) this.historyKnown = true;
         this.historyLoading = false;
         this.loadError = null;
@@ -1057,46 +1059,20 @@ export class AcpChatStore {
 
     try {
       const transcript = this.chatState.transcript;
-      const oldestVisibleSeq = transcript.state.displayTurns[0]?.seq;
-      let before: number | undefined;
-      let revision: number | undefined;
-      let generation: string | undefined;
-      do {
-        const history = await session.loadHistory(before, 100);
-        if (this._disposed || this.session !== session || this._historyEpoch !== epoch) return true;
-        if (!history.success) throw new AcpStartError(history.error);
-        if (history.data.unavailable) return !transcript.needsHistory;
-        const position = history.data.position;
-        // A change between pages requires another pass over the loaded range, including
-        // its latest page. A newer old-page response alone cannot prove we caught up.
-        if (
-          before !== undefined &&
-          (position?.historyRevision !== revision || position?.generation !== generation)
-        )
-          return false;
-        revision = position?.historyRevision;
-        generation = position?.generation;
-        let applied = false;
-        runInAction(() => {
-          applied = transcript.applyPage(history.data);
-          if (!applied) return;
-          this.historyKnown = true;
-          this.loadError = null;
-          this._bootstrapFailed = false;
-          this._syncMessageCount();
-        });
-        if (!applied) return false;
-        const cursor = history.data.nextCursor;
-        if (
-          !position ||
-          cursor === null ||
-          oldestVisibleSeq === undefined ||
-          cursor <= oldestVisibleSeq
-        )
-          break;
-        if (before !== undefined && cursor >= before) return false;
-        before = cursor;
-      } while (!this._disposed);
+      const history = await session.loadHistory(undefined, ACP_RENDER_HISTORY_LIMIT);
+      if (this._disposed || this.session !== session || this._historyEpoch !== epoch) return true;
+      if (!history.success) throw new AcpStartError(history.error);
+      if (history.data.unavailable) return !transcript.needsHistory;
+      let applied = false;
+      runInAction(() => {
+        applied = this._applyLatestHistoryPage(history.data);
+        if (!applied) return;
+        this.historyKnown = true;
+        this.loadError = null;
+        this._bootstrapFailed = false;
+        this._syncMessageCount();
+      });
+      if (!applied) return false;
       return !transcript.needsHistory;
     } catch (error) {
       if (this._disposed || this.session !== session || this._historyEpoch !== epoch) return true;
@@ -1112,6 +1088,23 @@ export class AcpChatStore {
       }
       return false;
     }
+  }
+
+  private _applyLatestHistoryPage(page: HistoryPage): boolean {
+    const transcript = this.chatState.transcript;
+    const active = transcript.state.activeTurnSnapshot;
+    const previous = active
+      ? [...transcript.state.displayTurns, active]
+      : transcript.state.displayTurns;
+    const applied = transcript.applyLatestPage(page, ACP_RENDER_HISTORY_LIMIT);
+    if (!applied) return false;
+
+    for (const turn of previous) {
+      for (const item of turn.items) {
+        if (!transcript.findItemById(item.id)) this.chatState.parseCaches.evictBlocks(item.id);
+      }
+    }
+    return true;
   }
 
   private _syncMessageCount(): void {

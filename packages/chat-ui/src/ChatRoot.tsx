@@ -344,11 +344,7 @@ export function ChatRoot(props: ChatRootProps) {
   const setExpandedUserId = (id: string | null) => state().expandedUserId.set(id);
   const [structureVersion, setStructureVersion] = createSignal(0);
 
-  const isExecutionGroupToggle = (id: string) =>
-    id.endsWith(':execution') || id.endsWith(':execution:hide');
-
-  const stableCollapseAnchorId = (id: string) =>
-    id.endsWith(':execution:hide') ? id.slice(0, -':hide'.length) : id;
+  const isExecutionGroupToggle = (id: string) => id.endsWith(':execution');
 
   const toggleCollapsed = (id: string): void => {
     viewState().toggleCollapsed(id);
@@ -1650,7 +1646,7 @@ export function ChatRoot(props: ChatRootProps) {
       const collapseTarget = t.closest('[data-collapse-id]') as HTMLElement | null;
       if (collapseTarget?.dataset.collapseId) {
         const id = collapseTarget.dataset.collapseId;
-        const anchorItemId = stableCollapseAnchorId(id);
+        const anchorItemId = id;
         // Pin the toggled row at its current viewport position before the height
         // change. With readPhase no longer reclassifying intent on idle frames,
         // this anchor is now guaranteed to survive the tween — fixing the scroll

@@ -77,6 +77,8 @@ export type TranscriptApi = {
   observe(snapshot: TranscriptSnapshot): boolean;
   /** Merge only the page's authoritative range; reject obsolete responses. */
   applyPage(page: HistoryPage): boolean;
+  /** Replace committed history with a bounded latest-page window. */
+  applyLatestPage(page: HistoryPage, maxTurns: number): boolean;
   readonly needsHistory: boolean;
   /** Controlled active-turn write surface (set / commit). */
   activeTurn: ActiveTurn;
@@ -329,6 +331,86 @@ export function createTranscript(): TranscriptApi {
     },
   };
 
+  const applyHistoryPage = (page: HistoryPage, latestWindowLimit?: number): boolean => {
+    if (page.unavailable) return false;
+    const normalizedLatestWindowLimit =
+      latestWindowLimit === undefined ? undefined : Math.max(0, Math.floor(latestWindowLimit));
+    const latestTurns = (turns: TranscriptTurn[]) =>
+      normalizedLatestWindowLimit === undefined
+        ? turns
+        : normalizedLatestWindowLimit === 0
+          ? []
+          : turns.slice(-normalizedLatestWindowLimit);
+    const position = page.position;
+    if (!position) {
+      if (head || historyGeneration) return false;
+      const turns = latestTurns(page.turns);
+      batch(() => {
+        history.replace(turns);
+        if (latestWindowLimit !== undefined) {
+          const committedThrough = turns.at(-1)?.seq;
+          if (committedThrough !== undefined) {
+            setRetained((previous) => previous.filter((turn) => turn.seq > committedThrough));
+          }
+        }
+      });
+      return true;
+    }
+    if (
+      !page.coverage ||
+      retiredGenerations.has(position.generation) ||
+      (head && position.generation !== head.generation) ||
+      (latestWindowLimit !== undefined && page.coverage.beforeSeq !== null)
+    )
+      return false;
+    const newGeneration = historyGeneration !== position.generation;
+    if (!newGeneration && position.historyRevision < appliedRevision) return false;
+    const { fromSeq, beforeSeq } = page.coverage;
+    const covered = (turn: TranscriptTurn) =>
+      (fromSeq === null || turn.seq >= fromSeq) && (beforeSeq === null || turn.seq < beforeSeq);
+    const keepExisting = !newGeneration && latestWindowLimit === undefined;
+    const next = new Map(
+      (keepExisting ? committed() : [])
+        .filter((turn) => !covered(turn))
+        .map((turn) => [turn.id, turn])
+    );
+    for (const turn of page.turns) next.set(turn.id, turn);
+    let nextTurns = [...next.values()].sort((a, b) => a.seq - b.seq);
+    nextTurns = latestTurns(nextTurns);
+    batch(() => {
+      if (displayGeneration !== undefined && displayGeneration !== position.generation) {
+        retiredGenerations.add(displayGeneration);
+        setRetained([]);
+        setLive({ activeTurn: null, turnStatus: 'done' });
+      } else {
+        const committedThrough = position.lastCommittedTurnSeq ?? -Infinity;
+        setRetained((previous) =>
+          latestWindowLimit === undefined
+            ? previous.filter((turn) => !covered(turn) || turn.seq > committedThrough)
+            : previous.filter((turn) => turn.seq > committedThrough)
+        );
+      }
+      displayGeneration = position.generation;
+      historyGeneration = position.generation;
+      appliedRevision = position.historyRevision;
+      history.replace(nextTurns);
+      if (head) {
+        const turn = head.activeTurn;
+        activeTurnApi.set(
+          turn &&
+            turn.seq >
+              Math.max(
+                head.lastCommittedTurnSeq ?? -Infinity,
+                position.lastCommittedTurnSeq ?? -Infinity
+              )
+            ? turn
+            : null
+        );
+      }
+    });
+    return true;
+  };
+
   return {
     history,
     observe(snapshot) {
@@ -355,63 +437,8 @@ export function createTranscript(): TranscriptApi {
           previous.historyRevision !== snapshot.historyRevision)
       );
     },
-    applyPage(page) {
-      if (page.unavailable) return false;
-      const position = page.position;
-      if (!position) {
-        if (head || historyGeneration) return false;
-        history.replace(page.turns);
-        return true;
-      }
-      if (
-        !page.coverage ||
-        retiredGenerations.has(position.generation) ||
-        (head && position.generation !== head.generation)
-      )
-        return false;
-      const newGeneration = historyGeneration !== position.generation;
-      if (!newGeneration && position.historyRevision < appliedRevision) return false;
-      const { fromSeq, beforeSeq } = page.coverage;
-      const covered = (turn: TranscriptTurn) =>
-        (fromSeq === null || turn.seq >= fromSeq) && (beforeSeq === null || turn.seq < beforeSeq);
-      const next = new Map(
-        (newGeneration ? [] : committed())
-          .filter((turn) => !covered(turn))
-          .map((turn) => [turn.id, turn])
-      );
-      for (const turn of page.turns) next.set(turn.id, turn);
-      batch(() => {
-        if (displayGeneration !== undefined && displayGeneration !== position.generation) {
-          retiredGenerations.add(displayGeneration);
-          setRetained([]);
-          setLive({ activeTurn: null, turnStatus: 'done' });
-        } else {
-          setRetained((previous) =>
-            previous.filter(
-              (turn) => !covered(turn) || turn.seq > (position.lastCommittedTurnSeq ?? -Infinity)
-            )
-          );
-        }
-        displayGeneration = position.generation;
-        historyGeneration = position.generation;
-        appliedRevision = position.historyRevision;
-        history.replace([...next.values()].sort((a, b) => a.seq - b.seq));
-        if (head) {
-          const turn = head.activeTurn;
-          activeTurnApi.set(
-            turn &&
-              turn.seq >
-                Math.max(
-                  head.lastCommittedTurnSeq ?? -Infinity,
-                  position.lastCommittedTurnSeq ?? -Infinity
-                )
-              ? turn
-              : null
-          );
-        }
-      });
-      return true;
-    },
+    applyPage: (page) => applyHistoryPage(page),
+    applyLatestPage: (page, maxTurns) => applyHistoryPage(page, maxTurns),
     get needsHistory() {
       return (
         !!head && (head.generation !== historyGeneration || head.historyRevision > appliedRevision)

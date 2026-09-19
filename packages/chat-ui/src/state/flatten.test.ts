@@ -380,32 +380,32 @@ describe('flatten — grouped turn activity', () => {
     expect(units[1]?.data).toMatchObject({ itemCount: 1, expanded: false });
   });
 
-  it('auto-opens the live run and lets its separate hide override collapse it', () => {
+  it('keeps a live run collapsed until the user explicitly expands it', () => {
     const live = turn('turn-live', 0, userMsg('user-1', 0), thinking('thought-1', 1, 'thinking'));
-    const open = flattenTier(
+    const collapsed = flattenTier(
       [live],
       groupedCtx({ active: true, activeTurnId: 'turn-live' }),
       STUB_SEGMENTERS,
       STUB_UNIT_DEFS
     );
-    const hidden = flattenTier(
+    const expanded = flattenTier(
       [live],
       groupedCtx({
         active: true,
         activeTurnId: 'turn-live',
-        expanded: ['turn-live:execution:hide'],
+        expanded: ['turn-live:execution'],
       }),
       STUB_SEGMENTERS,
       STUB_UNIT_DEFS
     );
 
-    expect(open.map((unit) => unit.kind)).toEqual(['message', 'execution-group', 'thinking']);
-    expect(open[1]?.data).toMatchObject({
+    expect(collapsed.map((unit) => unit.kind)).toEqual(['message', 'execution-group']);
+    expect(collapsed[1]?.data).toMatchObject({
       status: 'working',
-      expanded: true,
-      toggleId: 'turn-live:execution:hide',
+      expanded: false,
+      toggleId: 'turn-live:execution',
     });
-    expect(hidden.map((unit) => unit.kind)).toEqual(['message', 'execution-group']);
+    expect(expanded.map((unit) => unit.kind)).toEqual(['message', 'execution-group', 'thinking']);
   });
 
   it('does not add a fake working group when the active tier only has a pending prompt', () => {
@@ -420,7 +420,7 @@ describe('flatten — grouped turn activity', () => {
     expect(units.map((unit) => unit.kind)).toEqual(['message']);
   });
 
-  it('defaults failed and stopped groups open while preserving a hide override', () => {
+  it('defaults failed and stopped groups closed while preserving an expand override', () => {
     const cases = [
       {
         turn: {
@@ -441,73 +441,81 @@ describe('flatten — grouped turn activity', () => {
     ] as const;
 
     for (const entry of cases) {
-      const open = flattenTier([entry.turn], groupedCtx(), STUB_SEGMENTERS, STUB_UNIT_DEFS);
-      const hidden = flattenTier(
+      const collapsed = flattenTier([entry.turn], groupedCtx(), STUB_SEGMENTERS, STUB_UNIT_DEFS);
+      const expanded = flattenTier(
         [entry.turn],
-        groupedCtx({ expanded: [`${entry.groupId}:hide`] }),
+        groupedCtx({ expanded: [entry.groupId] }),
         STUB_SEGMENTERS,
         STUB_UNIT_DEFS
       );
 
-      expect(open[1]?.data).toMatchObject({
+      expect(collapsed[1]?.data).toMatchObject({
         status: entry.status,
-        expanded: true,
-        toggleId: `${entry.groupId}:hide`,
+        expanded: false,
+        toggleId: entry.groupId,
       });
-      expect(open.map((unit) => unit.kind)).toEqual([
+      expect(collapsed.map((unit) => unit.kind)).toEqual(['message', 'execution-group']);
+      expect(expanded.map((unit) => unit.kind)).toEqual([
         'message',
         'execution-group',
         'tool',
         'turn-outcome',
       ]);
-      expect(hidden.map((unit) => unit.kind)).toEqual(['message', 'execution-group']);
     }
   });
 
-  it('keeps outcome-less retained running activity visible and unresolved', () => {
+  it('keeps outcome-less retained running activity collapsed and unresolved by default', () => {
     const unresolved = turn(
       'turn-unresolved',
       0,
       userMsg('user-unresolved', 0),
       tool('tool-running', 1, 'running')
     );
-    const open = flattenTier([unresolved], groupedCtx(), STUB_SEGMENTERS, STUB_UNIT_DEFS);
-    const hidden = flattenTier(
+    const collapsed = flattenTier([unresolved], groupedCtx(), STUB_SEGMENTERS, STUB_UNIT_DEFS);
+    const expanded = flattenTier(
       [unresolved],
-      groupedCtx({ expanded: ['turn-unresolved:execution:hide'] }),
+      groupedCtx({ expanded: ['turn-unresolved:execution'] }),
       STUB_SEGMENTERS,
       STUB_UNIT_DEFS
     );
 
-    expect(open[1]?.data).toMatchObject({
+    expect(collapsed[1]?.data).toMatchObject({
       status: 'working',
       active: false,
-      expanded: true,
-      toggleId: 'turn-unresolved:execution:hide',
+      expanded: false,
+      toggleId: 'turn-unresolved:execution',
     });
-    expect(open.map((unit) => unit.kind)).toEqual(['message', 'execution-group', 'tool']);
-    expect(hidden.map((unit) => unit.kind)).toEqual(['message', 'execution-group']);
+    expect(collapsed.map((unit) => unit.kind)).toEqual(['message', 'execution-group']);
+    expect(expanded.map((unit) => unit.kind)).toEqual(['message', 'execution-group', 'tool']);
   });
 
-  it('keeps the group id stable and auto-collapses when a live run settles', () => {
+  it('keeps the group id and explicit expansion stable when a live run settles', () => {
     const live = turn('turn-1', 0, userMsg('user-1', 0), tool('tool-1', 1, 'running'));
     const settled = { ...live, outcome: { kind: 'done' as const } };
     const activeUnits = flattenTier(
       [live],
-      groupedCtx({ active: true, activeTurnId: 'turn-1' }),
+      groupedCtx({
+        active: true,
+        activeTurnId: 'turn-1',
+        expanded: ['turn-1:execution'],
+      }),
       STUB_SEGMENTERS
     );
-    const committedUnits = flattenTier([settled], groupedCtx(), STUB_SEGMENTERS);
+    const committedUnits = flattenTier(
+      [settled],
+      groupedCtx({ expanded: ['turn-1:execution'] }),
+      STUB_SEGMENTERS
+    );
 
     expect(activeUnits.find((unit) => unit.kind === 'execution-group')?.id).toBe(
       committedUnits.find((unit) => unit.kind === 'execution-group')?.id
     );
     expect(activeUnits.find((unit) => unit.kind === 'execution-group')?.data).toMatchObject({
       expanded: true,
-      toggleId: 'turn-1:execution:hide',
+      toggleId: 'turn-1:execution',
     });
     expect(committedUnits.find((unit) => unit.kind === 'execution-group')?.data).toMatchObject({
-      expanded: false,
+      expanded: true,
       toggleId: 'turn-1:execution',
     });
   });

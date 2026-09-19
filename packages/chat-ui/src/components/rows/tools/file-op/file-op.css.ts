@@ -65,8 +65,8 @@ export const fileOpLeadingIcon = style({
   opacity: 0.8,
 });
 
-export const monoRunning = style({
-  fontFamily: 'monospace',
+export const runningLabel = style({
+  fontFamily: vars.typeBodyFontFamily,
   fontSize: vars.typeBodyFontSize,
   color: vars.fgPassive,
 });

@@ -230,8 +230,8 @@ export function flattenTier(
       const finalAssistants =
         trailingAssistantStart >= 0 ? items.slice(trailingAssistantStart) : [];
       const isLiveTurn = ctx.active && ctx.activeTurnId === turn.id;
-      // Once the final response begins, the activity run becomes complete and
-      // auto-collapses even though the turn itself may still be streaming.
+      // Once the final response begins, the activity run becomes complete even
+      // though the turn itself may still be streaming.
       const groupActive = isLiveTurn && finalAssistants.length === 0;
       const hasNonDoneOutcome = !!turn.outcome && turn.outcome.kind !== 'done';
       const shouldShowGroup =
@@ -255,9 +255,8 @@ export function flattenTier(
         // non-live turns unresolved (for example, retained outgoing history).
         const childRunning = !isLiveTurn && activityRunning(activityItems);
         const status = executionStatus(turn, groupActive, childError, childRunning);
-        const defaultOpen = status.status !== 'done';
-        const toggleId = defaultOpen ? `${groupId}:hide` : groupId;
-        const expanded = defaultOpen ? !ctx.expanded(toggleId) : ctx.expanded(toggleId);
+        const toggleId = groupId;
+        const expanded = ctx.expanded(toggleId);
         processItem({
           kind: 'execution-group',
           id: groupId,

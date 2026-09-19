@@ -19,7 +19,7 @@ import {
   fileOpLeadingIcon,
   fileOpPermissionIcon,
   fileRow,
-  monoRunning,
+  runningLabel,
   singleOpRow,
 } from './file-op.css';
 import { fileOpCardVars } from './file-op.css';
@@ -102,7 +102,7 @@ export function FileOpRow(props: FileOpRowProps) {
           <>
             <FileOpIcon op={props.item.op} />
             <span
-              class={monoRunning}
+              class={runningLabel}
               classList={{
                 [textShimmer]: props.item.status === 'running' && !props.item.awaitingPermission,
               }}
@@ -286,7 +286,7 @@ export function FileOperation(props: FileOperationProps) {
             <>
               <FileOpIcon op={props.item.op} />
               <span
-                class={monoRunning}
+                class={runningLabel}
                 classList={{ [textShimmer]: props.item.status === 'running' }}
               >
                 {verb()}…

@@ -334,7 +334,7 @@ export type TurnOutcomeItem = {
 export type ExecutionGroupItem = {
   kind: 'execution-group';
   id: string;
-  /** The id toggled by the header (default-open groups use a hide override). */
+  /** Stable id toggled by the header across the turn's whole lifecycle. */
   toggleId: string;
   status: 'working' | 'done' | 'stopped' | 'failed';
   itemCount: number;
