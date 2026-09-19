@@ -117,6 +117,10 @@ export type SegmentCtx = {
   caches: ChatCaches;
   expanded: (id: string) => boolean;
   active: boolean;
+  /** Opt-in OpenDesign-style disclosure around all activity in a turn. */
+  groupTurnActivity?: boolean;
+  /** The real live turn within an active tier that may also contain a pending prompt. */
+  activeTurnId?: string;
   plan: () => PlanState | null;
   pendingToolCallIds: () => Set<string>;
   terminalOutput: (terminalId: string) => TerminalOutputSnapshot | null;

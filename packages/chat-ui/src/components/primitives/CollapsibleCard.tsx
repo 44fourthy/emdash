@@ -18,7 +18,13 @@ import { assignInlineVars } from '@vanilla-extract/dynamic';
 import type { JSX } from 'solid-js';
 import { clipTrackedHeight } from './card-clip';
 import { CardHeader } from './CardHeader';
-import { collapsibleCard, collapsibleCardVars } from './collapsible-card.css';
+import {
+  collapsibleCard,
+  collapsibleCardActivity,
+  collapsibleCardVars,
+} from './collapsible-card.css';
+
+export type CollapsibleCardAppearance = 'card' | 'activity';
 
 export type CollapsibleCardProps = {
   /** Item id wired to data-collapse-id for ChatRoot click delegation. */
@@ -27,6 +33,8 @@ export type CollapsibleCardProps = {
   ctx: RenderCtx;
   /** Full measured card height (px) for the current display state. */
   height: number;
+  /** Visual treatment. Activity rows drop the visible shell until expanded. */
+  appearance?: CollapsibleCardAppearance;
   /** Header row height in px (drives flex height). */
   headerH: number;
   /** Whether the card is currently expanded. */
@@ -61,7 +69,8 @@ export function CollapsibleCard(props: CollapsibleCardProps) {
 
   return (
     <div
-      class={collapsibleCard}
+      class={`${collapsibleCard} ${props.appearance === 'activity' ? collapsibleCardActivity : ''}`}
+      data-body-visible={props.bodyVisible !== false ? '' : undefined}
       style={assignInlineVars(collapsibleCardVars, pxTokens({ height: cardH() }))}
     >
       <CardHeader
@@ -76,6 +85,7 @@ export function CollapsibleCard(props: CollapsibleCardProps) {
         errorTitle={props.errorTitle}
         awaitingPermission={props.awaitingPermission}
         right={props.headerRight}
+        appearance={props.appearance}
       />
       {props.children}
     </div>

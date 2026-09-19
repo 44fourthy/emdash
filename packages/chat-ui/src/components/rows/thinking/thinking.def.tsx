@@ -2,6 +2,7 @@ import { useTheme } from '@components/contexts/ThemeContext';
 import { HEADER_ROW_EXTRA_H } from '@components/engine/row-metrics';
 import { BlockStackView } from '@components/primitives/BlockStackView';
 import { CollapseHeader } from '@components/primitives/CollapseHeader';
+import { IconThought } from '@components/primitives/icons';
 import { PreviewWindow } from '@components/primitives/PreviewWindow';
 import type { MeasureCtx, RenderCtx } from '@core/define';
 import { layoutBlockStack } from '@core/layout/block-stack';
@@ -28,6 +29,11 @@ export const THINKING_VARS: ThinkingVars = {
 };
 
 const ACTIVE_THINKING_PREVIEW_MAX_CHARS = 8 * 1024;
+
+function formatDuration(durationMs: number): string {
+  if (durationMs < 1000) return '<1s';
+  return `${Math.floor(durationMs / 1000)}s`;
+}
 
 /**
  * A collapsed active-thinking row only exposes a 72px tail preview. Keep its
@@ -73,14 +79,12 @@ function ThinkingHeader(props: { item: ChatThinking; expanded: boolean; headerH:
 
   const label = () => {
     if (props.item.status === 'thinking') {
-      if (elapsed() < 1) return 'Thinking';
-      return `Thinking ${elapsed()}s`;
+      return `Thinking · ${elapsed()}s`;
     }
     if (props.item.durationMs !== undefined) {
-      if (props.item.durationMs < 1000) return 'Thought briefly';
-      return `Thought for ${Math.floor(props.item.durationMs / 1000)}s`;
+      return `Thoughts · ${formatDuration(props.item.durationMs)}`;
     }
-    return 'Thought';
+    return 'Thoughts';
   };
 
   return (
@@ -89,6 +93,7 @@ function ThinkingHeader(props: { item: ChatThinking; expanded: boolean; headerH:
       expanded={props.expanded}
       active={props.item.status === 'thinking'}
       height={props.headerH}
+      icon={<IconThought />}
     >
       <span
         aria-live={props.item.status === 'thinking' ? 'polite' : undefined}

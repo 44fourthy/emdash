@@ -61,6 +61,8 @@ export type ChatViewOptions = {
   contentOverlay?: boolean;
   stickToBottom?: boolean;
   pinUserMessages?: boolean;
+  /** Group intermediate work for each turn behind one disclosure. */
+  groupTurnActivity?: boolean;
   /** Extra class for the scroll container. */
   class?: string;
   /** Class for the centered content column. */
@@ -256,6 +258,7 @@ export function createChatView(opts: ChatViewOptions): ChatView {
         onActiveUserMessageVisibilityChange={onActiveUserMessageVisibilityChange}
         controls={controls}
         pinUserMessages={opts.pinUserMessages}
+        groupTurnActivity={opts.groupTurnActivity}
         composer={opts.composer}
         composerPlacement={opts.composerPlacement}
         contentOverlay={opts.contentOverlay}

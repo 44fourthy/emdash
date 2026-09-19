@@ -1,6 +1,13 @@
 import { useCommands } from '@components/contexts/CommandsContext';
 import { CollapseHeader } from '@components/primitives/CollapseHeader';
-import { IconError, IconShieldAlert } from '@components/primitives/icons';
+import {
+  IconError,
+  IconFileDelete,
+  IconFileEdit,
+  IconFileMove,
+  IconFileRead,
+  IconShieldAlert,
+} from '@components/primitives/icons';
 import { basename } from '@lib/path';
 import { assignInlineVars } from '@vanilla-extract/dynamic';
 import { For, Show, createEffect } from 'solid-js';
@@ -9,6 +16,7 @@ import {
   chevronSm,
   fileOpErrorIcon,
   fileOpHeader,
+  fileOpLeadingIcon,
   fileOpPermissionIcon,
   fileRow,
   monoRunning,
@@ -26,9 +34,31 @@ const VERB: Record<FileOpKind, string> = {
   move: 'Moved',
 };
 
+function FileOpIcon(props: { op: FileOpKind }) {
+  return (
+    <span class={fileOpLeadingIcon} aria-hidden="true">
+      {props.op === 'read' ? (
+        <IconFileRead />
+      ) : props.op === 'edit' ? (
+        <IconFileEdit />
+      ) : props.op === 'delete' ? (
+        <IconFileDelete />
+      ) : (
+        <IconFileMove />
+      )}
+    </span>
+  );
+}
+
 // ── Internal: FileRowItem ─────────────────────────────────────────────────────
 
-function FileRowItem(props: { verb: string; path: string; lineH: number; onClick?: () => void }) {
+function FileRowItem(props: {
+  op: FileOpKind;
+  verb: string;
+  path: string;
+  lineH: number;
+  onClick?: () => void;
+}) {
   return (
     <div
       class={fileRow({ clickable: !!props.onClick })}
@@ -36,6 +66,7 @@ function FileRowItem(props: { verb: string; path: string; lineH: number; onClick
       role={props.onClick ? 'button' : undefined}
       onClick={props.onClick}
     >
+      <FileOpIcon op={props.op} />
       <span>{props.verb}</span>
       <span title={props.path}>{basename(props.path)}</span>
     </div>
@@ -68,18 +99,22 @@ export function FileOpRow(props: FileOpRowProps) {
       <Show
         when={props.item.ops[0]}
         fallback={
-          <span
-            class={monoRunning}
-            classList={{
-              [textShimmer]: props.item.status === 'running' && !props.item.awaitingPermission,
-            }}
-          >
-            {verb()}…
-          </span>
+          <>
+            <FileOpIcon op={props.item.op} />
+            <span
+              class={monoRunning}
+              classList={{
+                [textShimmer]: props.item.status === 'running' && !props.item.awaitingPermission,
+              }}
+            >
+              {verb()}…
+            </span>
+          </>
         }
       >
         {(op) => (
           <FileRowItem
+            op={props.item.op}
             verb={verb()}
             path={op().path}
             lineH={props.lineH}
@@ -127,6 +162,7 @@ export function FileOpHeader(props: FileOpHeaderProps) {
       errorTitle={props.item.error}
       awaitingPermission={props.item.awaitingPermission}
       height={props.rowH}
+      icon={<FileOpIcon op={props.item.op} />}
     >
       {VERB[props.item.op]} {props.item.ops.length} files
     </CollapseHeader>
@@ -164,6 +200,7 @@ export function FileOpList(props: FileOpListProps) {
       <For each={props.item.ops}>
         {(op) => (
           <FileRowItem
+            op={props.item.op}
             verb={verb()}
             path={op.path}
             lineH={props.lineH}
@@ -207,7 +244,9 @@ export function FileOpPreviewBody(props: FileOpPreviewBodyProps) {
         }}
       >
         <For each={props.item.ops}>
-          {(op) => <FileRowItem verb={verb()} path={op.path} lineH={props.lineH} />}
+          {(op) => (
+            <FileRowItem op={props.item.op} verb={verb()} path={op.path} lineH={props.lineH} />
+          )}
         </For>
       </div>
     </div>
@@ -244,16 +283,25 @@ export function FileOperation(props: FileOperationProps) {
         <Show
           when={props.item.ops[0]}
           fallback={
-            <span
-              class={monoRunning}
-              classList={{ [textShimmer]: props.item.status === 'running' }}
-            >
-              {verb()}…
-            </span>
+            <>
+              <FileOpIcon op={props.item.op} />
+              <span
+                class={monoRunning}
+                classList={{ [textShimmer]: props.item.status === 'running' }}
+              >
+                {verb()}…
+              </span>
+            </>
           }
         >
           {(op) => (
-            <FileRowItem verb={verb()} path={op().path} lineH={16} onClick={() => openFile(op())} />
+            <FileRowItem
+              op={props.item.op}
+              verb={verb()}
+              path={op().path}
+              lineH={16}
+              onClick={() => openFile(op())}
+            />
           )}
         </Show>
       }
@@ -265,6 +313,7 @@ export function FileOperation(props: FileOperationProps) {
           aria-expanded={expanded() ? 'true' : 'false'}
           data-collapse-id={props.item.id}
         >
+          <FileOpIcon op={props.item.op} />
           <span classList={{ [textShimmer]: props.item.status === 'running' }}>
             {verb()} {props.item.ops.length} files
           </span>
@@ -275,7 +324,13 @@ export function FileOperation(props: FileOperationProps) {
         <Show when={expanded()}>
           <For each={props.item.ops}>
             {(op) => (
-              <FileRowItem verb={verb()} path={op.path} lineH={16} onClick={() => openFile(op)} />
+              <FileRowItem
+                op={props.item.op}
+                verb={verb()}
+                path={op.path}
+                lineH={16}
+                onClick={() => openFile(op)}
+              />
             )}
           </For>
         </Show>

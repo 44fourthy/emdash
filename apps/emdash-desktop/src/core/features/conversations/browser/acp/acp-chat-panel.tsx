@@ -855,6 +855,7 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
         contentOverlay
         stickToBottom
         pinUserMessages
+        groupTurnActivity
         onReady={handleReady}
         commands={transcriptCommands}
         onAtBottomChange={setAtBottom}

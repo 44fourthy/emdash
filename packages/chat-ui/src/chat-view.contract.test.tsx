@@ -137,8 +137,8 @@ describe('createChatView', () => {
 
     const pinRect = pinnedCard!.getBoundingClientRect();
     const probeRect = probe!.getBoundingClientRect();
-    expect(Math.abs(pinRect.left - probeRect.left)).toBeLessThan(1);
-    expect(Math.abs(pinRect.width - probeRect.width)).toBeLessThan(1);
+    expect(Math.abs(pinRect.right - probeRect.right)).toBeLessThan(1);
+    expect(pinRect.width).toBeLessThanOrEqual(probeRect.width);
 
     view.dispose();
     ctx.dispose();

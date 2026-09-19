@@ -15,6 +15,7 @@
  *   3. Register the UnitDef in UNIT_REGISTRY.
  */
 
+import { executionGroupUnitDef } from '@components/rows/execution-group/execution-group.def';
 import { messageFromItem, messageUnitDef } from '@components/rows/message/message.def';
 import { planFromItem, planUnitDef } from '@components/rows/plan/plan.def';
 import { resourceLinkUnitDef } from '@components/rows/resource-link/resource-link.def';
@@ -43,6 +44,7 @@ import { deriveToolHeaderState } from '@state/tool-header-state';
 import type {
   ChatDiff,
   ChatExecute,
+  ExecutionGroupItem,
   ChatFileOpToolCall,
   ChatItem,
   ChatMessage,
@@ -212,6 +214,11 @@ export const SEGMENTERS: Record<string, ItemSegmenter> = {
     (item) => item,
     COMPOSITE_CHROME
   ),
+  'execution-group': nativePassthrough<ExecutionGroupItem>(
+    'execution-group',
+    (item) => item,
+    COMPOSITE_CHROME
+  ),
 };
 
 // ── UNIT_REGISTRY ─────────────────────────────────────────────────────────────
@@ -239,4 +246,5 @@ export const UNIT_REGISTRY: Record<string, RegistryUnitDef> = {
   'tool-group': toolGroupUnitDef as unknown as RegistryUnitDef,
   working: workingUnitDef as unknown as RegistryUnitDef,
   'turn-outcome': turnOutcomeUnitDef as unknown as RegistryUnitDef,
+  'execution-group': executionGroupUnitDef as unknown as RegistryUnitDef,
 };

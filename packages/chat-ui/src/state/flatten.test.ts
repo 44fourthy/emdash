@@ -26,6 +26,9 @@ const STUB_SEGMENTERS: Record<string, ItemSegmenter> = {
   tool: passthrough('tool'),
   thinking: passthrough('thinking'),
   'thinking-group': passthrough('thinking-group'),
+  'execution-group': passthrough('execution-group'),
+  'turn-outcome': passthrough('turn-outcome'),
+  working: passthrough('working'),
   'file-op': passthrough('file-op'),
   execute: passthrough('execute'),
   diff: passthrough('diff'),
@@ -37,8 +40,12 @@ function userMsg(id: string, seq = 0, text = 'hello'): ChatMessage {
   return { kind: 'message', id, seq, role: 'user', text };
 }
 
-function tool(id: string, seq = 0): ChatItem {
-  return { kind: 'tool', id, seq, name: 'bash', status: 'done' } as ChatItem;
+function assistantMsg(id: string, seq = 0, text = 'done'): ChatMessage {
+  return { kind: 'message', id, seq, role: 'assistant', text };
+}
+
+function tool(id: string, seq = 0, status: 'running' | 'done' | 'error' = 'done'): ChatItem {
+  return { kind: 'tool', id, seq, name: 'bash', status } as ChatItem;
 }
 
 function thinking(id: string, seq = 0, status: 'thinking' | 'done' = 'done'): ChatThinking {
@@ -276,6 +283,233 @@ describe('flatten — identity stability', () => {
     const committed = tx.state.committedTurns[0].items[0];
     expect(committed).not.toBe(streaming);
     expect(flattenCommitted(tx)[0].data).toBe(committed);
+  });
+});
+
+describe('flatten — grouped turn activity', () => {
+  const groupedCtx = (opts?: {
+    active?: boolean;
+    activeTurnId?: string;
+    expanded?: readonly string[];
+  }): SegmentCtx => {
+    const expanded = new Set(opts?.expanded ?? []);
+    return {
+      ...segCtx,
+      active: opts?.active ?? false,
+      activeTurnId: opts?.activeTurnId,
+      groupTurnActivity: true,
+      expanded: (id) => expanded.has(id),
+    };
+  };
+
+  it('keeps the final assistant reply visible while completed activity is collapsed', () => {
+    const units = flattenTier(
+      [
+        turn(
+          'turn-1',
+          0,
+          userMsg('user-1', 0),
+          thinking('thought-1', 1),
+          tool('tool-1', 2),
+          assistantMsg('answer-1', 3)
+        ),
+      ],
+      groupedCtx(),
+      STUB_SEGMENTERS,
+      STUB_UNIT_DEFS
+    );
+
+    expect(units.map((unit) => unit.kind)).toEqual(['message', 'execution-group', 'message']);
+    expect(units[1]).toMatchObject({
+      id: 'turn-1:execution#self',
+      itemId: 'turn-1:execution',
+      data: { status: 'done', itemCount: 2, expanded: false },
+    });
+    expect(units[2]?.itemId).toBe('answer-1');
+  });
+
+  it('reveals every activity row in order behind the one group disclosure', () => {
+    const units = flattenTier(
+      [
+        turn(
+          'turn-1',
+          0,
+          userMsg('user-1', 0),
+          assistantMsg('progress-1', 1, 'Checking'),
+          tool('tool-1', 2),
+          assistantMsg('answer-1', 3)
+        ),
+      ],
+      groupedCtx({ expanded: ['turn-1:execution'] }),
+      STUB_SEGMENTERS,
+      STUB_UNIT_DEFS
+    );
+
+    expect(units.map((unit) => `${unit.kind}:${unit.itemId}`)).toEqual([
+      'message:user-1',
+      'execution-group:turn-1:execution',
+      'message:progress-1',
+      'tool:tool-1',
+      'message:answer-1',
+    ]);
+  });
+
+  it('keeps every message in the trailing assistant run outside the activity group', () => {
+    const units = flattenTier(
+      [
+        turn(
+          'turn-1',
+          0,
+          userMsg('user-1', 0),
+          tool('tool-1', 1),
+          assistantMsg('answer-1', 2, 'First answer block'),
+          assistantMsg('answer-2', 3, 'Second answer block')
+        ),
+      ],
+      groupedCtx(),
+      STUB_SEGMENTERS,
+      STUB_UNIT_DEFS
+    );
+
+    expect(units.map((unit) => `${unit.kind}:${unit.itemId}`)).toEqual([
+      'message:user-1',
+      'execution-group:turn-1:execution',
+      'message:answer-1',
+      'message:answer-2',
+    ]);
+    expect(units[1]?.data).toMatchObject({ itemCount: 1, expanded: false });
+  });
+
+  it('auto-opens the live run and lets its separate hide override collapse it', () => {
+    const live = turn('turn-live', 0, userMsg('user-1', 0), thinking('thought-1', 1, 'thinking'));
+    const open = flattenTier(
+      [live],
+      groupedCtx({ active: true, activeTurnId: 'turn-live' }),
+      STUB_SEGMENTERS,
+      STUB_UNIT_DEFS
+    );
+    const hidden = flattenTier(
+      [live],
+      groupedCtx({
+        active: true,
+        activeTurnId: 'turn-live',
+        expanded: ['turn-live:execution:hide'],
+      }),
+      STUB_SEGMENTERS,
+      STUB_UNIT_DEFS
+    );
+
+    expect(open.map((unit) => unit.kind)).toEqual(['message', 'execution-group', 'thinking']);
+    expect(open[1]?.data).toMatchObject({
+      status: 'working',
+      expanded: true,
+      toggleId: 'turn-live:execution:hide',
+    });
+    expect(hidden.map((unit) => unit.kind)).toEqual(['message', 'execution-group']);
+  });
+
+  it('does not add a fake working group when the active tier only has a pending prompt', () => {
+    const pending = turn('pending:prompt-1:turn', 0, userMsg('prompt-1', 0));
+    const units = flattenTier(
+      [pending],
+      groupedCtx({ active: true }),
+      STUB_SEGMENTERS,
+      STUB_UNIT_DEFS
+    );
+
+    expect(units.map((unit) => unit.kind)).toEqual(['message']);
+  });
+
+  it('defaults failed and stopped groups open while preserving a hide override', () => {
+    const cases = [
+      {
+        turn: {
+          ...turn('turn-failed', 0, userMsg('user-failed', 0), tool('tool-failed', 1)),
+          outcome: { kind: 'error' as const, reason: 'prompt_failed' as const },
+        },
+        groupId: 'turn-failed:execution',
+        status: 'failed',
+      },
+      {
+        turn: {
+          ...turn('turn-stopped', 0, userMsg('user-stopped', 0), tool('tool-stopped', 1)),
+          outcome: { kind: 'cancelled' as const },
+        },
+        groupId: 'turn-stopped:execution',
+        status: 'stopped',
+      },
+    ] as const;
+
+    for (const entry of cases) {
+      const open = flattenTier([entry.turn], groupedCtx(), STUB_SEGMENTERS, STUB_UNIT_DEFS);
+      const hidden = flattenTier(
+        [entry.turn],
+        groupedCtx({ expanded: [`${entry.groupId}:hide`] }),
+        STUB_SEGMENTERS,
+        STUB_UNIT_DEFS
+      );
+
+      expect(open[1]?.data).toMatchObject({
+        status: entry.status,
+        expanded: true,
+        toggleId: `${entry.groupId}:hide`,
+      });
+      expect(open.map((unit) => unit.kind)).toEqual([
+        'message',
+        'execution-group',
+        'tool',
+        'turn-outcome',
+      ]);
+      expect(hidden.map((unit) => unit.kind)).toEqual(['message', 'execution-group']);
+    }
+  });
+
+  it('keeps outcome-less retained running activity visible and unresolved', () => {
+    const unresolved = turn(
+      'turn-unresolved',
+      0,
+      userMsg('user-unresolved', 0),
+      tool('tool-running', 1, 'running')
+    );
+    const open = flattenTier([unresolved], groupedCtx(), STUB_SEGMENTERS, STUB_UNIT_DEFS);
+    const hidden = flattenTier(
+      [unresolved],
+      groupedCtx({ expanded: ['turn-unresolved:execution:hide'] }),
+      STUB_SEGMENTERS,
+      STUB_UNIT_DEFS
+    );
+
+    expect(open[1]?.data).toMatchObject({
+      status: 'working',
+      active: false,
+      expanded: true,
+      toggleId: 'turn-unresolved:execution:hide',
+    });
+    expect(open.map((unit) => unit.kind)).toEqual(['message', 'execution-group', 'tool']);
+    expect(hidden.map((unit) => unit.kind)).toEqual(['message', 'execution-group']);
+  });
+
+  it('keeps the group id stable and auto-collapses when a live run settles', () => {
+    const live = turn('turn-1', 0, userMsg('user-1', 0), tool('tool-1', 1, 'running'));
+    const settled = { ...live, outcome: { kind: 'done' as const } };
+    const activeUnits = flattenTier(
+      [live],
+      groupedCtx({ active: true, activeTurnId: 'turn-1' }),
+      STUB_SEGMENTERS
+    );
+    const committedUnits = flattenTier([settled], groupedCtx(), STUB_SEGMENTERS);
+
+    expect(activeUnits.find((unit) => unit.kind === 'execution-group')?.id).toBe(
+      committedUnits.find((unit) => unit.kind === 'execution-group')?.id
+    );
+    expect(activeUnits.find((unit) => unit.kind === 'execution-group')?.data).toMatchObject({
+      expanded: true,
+      toggleId: 'turn-1:execution:hide',
+    });
+    expect(committedUnits.find((unit) => unit.kind === 'execution-group')?.data).toMatchObject({
+      expanded: false,
+      toggleId: 'turn-1:execution',
+    });
   });
 });
 

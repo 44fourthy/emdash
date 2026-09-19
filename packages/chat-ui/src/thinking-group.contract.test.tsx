@@ -70,7 +70,7 @@ describe('thinking group contract', () => {
   it('renders one collapsed summary with summed duration', async () => {
     const { header, host } = await mountThinkingGroup();
 
-    expect(header.textContent).toContain('Reasoned in 2 steps · 16s');
+    expect(header.textContent).toContain('Thoughts · 16s');
     expect(header.getAttribute('aria-expanded')).toBe('false');
     expect(host.querySelector('[data-collapse-id="thinking-1"]')).toBeNull();
   });
@@ -93,6 +93,16 @@ describe('thinking group contract', () => {
     expect(secondStep?.getAttribute('aria-expanded')).toBe('false');
     expect(host.textContent).toContain('First I inspected the transcript reducer');
     expect(host.textContent).not.toContain('Then I checked the renderer');
+  });
+
+  it('opens the disclosure from the keyboard', async () => {
+    const { header, host } = await mountThinkingGroup();
+    header.focus();
+    header.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await nextPaint();
+
+    expect(header.getAttribute('aria-expanded')).toBe('true');
+    expect(host.querySelector('[data-collapse-id="thinking-1"]')).not.toBeNull();
   });
 
   it('preserves a child expansion when the parent is closed and reopened', async () => {
@@ -176,7 +186,7 @@ describe('thinking group contract', () => {
   it('shows the active step preview only after revealing the child rows', async () => {
     const { header, host } = await mountThinkingGroup('thinking');
 
-    expect(header.textContent).toContain('Reasoning · step 2');
+    expect(header.textContent).toContain('Thinking ·');
     expect(host.textContent).not.toContain('presentation-only grouping boundary');
 
     header.click();

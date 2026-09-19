@@ -13,6 +13,7 @@ import { assignInlineVars } from '@vanilla-extract/dynamic';
 import { Show, createMemo } from 'solid-js';
 import type { ChatMessage } from '@/model';
 import { attachStripHeight, type MessageVars, userInnerWidth } from './metrics';
+import { layoutUserMessage } from './user-message-layout';
 import { UserMessageCard } from './UserMessageCard';
 import {
   assistantOuter,
@@ -37,25 +38,17 @@ export function messageFromItem(item: ChatMessage, ctx: SegmentCtx): ChatMessage
 // ── Measure ───────────────────────────────────────────────────────────────────
 
 export function measureMessage(item: ChatMessage, ctx: MeasureCtx, vars: MessageVars): number {
-  const { userCardPadY, cardBorder, collapsedMaxH, expandedMaxH } = vars;
-  const blocks = item.streaming
-    ? ctx.caches.parseBlocksStreaming(item.id, item.text)
-    : ctx.caches.parseBlocks(item.id, item.text);
+  const { collapsedMaxH, expandedMaxH } = vars;
 
   if (item.role === 'user') {
-    const innerW = userInnerWidth(ctx.width, vars);
-    const aH = attachStripHeight(item.attachments?.length ?? 0, innerW, vars);
-    if (blocks.length === 0) {
-      const fallback = aH + ctx.theme.fonts.body.lineHeight + 2 * userCardPadY + 2 * cardBorder;
-      return Math.min(fallback, ctx.expandedId === item.id ? expandedMaxH : collapsedMaxH);
-    }
-    const innerCtx = { ...ctx, width: innerW };
-    const stack = layoutBlockStack(blocks, innerCtx, { isCollapsed: ctx.isCollapsed });
-    const contentH = aH + stack.height + 2 * userCardPadY + 2 * cardBorder;
+    const contentH = layoutUserMessage(item, ctx, vars).fullHeight;
     return Math.min(contentH, ctx.expandedId === item.id ? expandedMaxH : collapsedMaxH);
   }
 
   // assistant / thought
+  const blocks = item.streaming
+    ? ctx.caches.parseBlocksStreaming(item.id, item.text)
+    : ctx.caches.parseBlocks(item.id, item.text);
   const footer = item.role === 'assistant' ? vars.footerH : 0;
   if (blocks.length === 0) {
     return ctx.theme.fonts.body.lineHeight + footer;
@@ -160,8 +153,9 @@ export const messageUnitDef = defineUnit<ChatMessage, MessageVars>({
     cardBorder: 1,
     collapsedMaxH: 120,
     expandedMaxH: 360,
-    userCardPadX: 16,
-    userCardPadY: 16,
+    userCardMinW: 72,
+    userCardPadX: 12,
+    userCardPadY: 10,
     attachThumb: 32,
     attachGap: 8,
     footerH: 24,

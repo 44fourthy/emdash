@@ -27,6 +27,12 @@ export const executeHeaderCommand = style({
   fontFamily: vars.typeCodeFontFamily,
 });
 
+export const executeDuration = style({
+  color: vars.fgPassive,
+  fontSize: vars.typeBodyFontSize,
+  fontVariantNumeric: 'tabular-nums',
+});
+
 // ── Line ──────────────────────────────────────────────────────────────────────
 
 export const executeLine = style({

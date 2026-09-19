@@ -87,6 +87,19 @@ export class Virtualizer {
   }
 
   /**
+   * Replace the row sequence and seed every index again. Used for rare
+   * structural edits that insert/remove rows in the middle of the transcript;
+   * setCount intentionally preserves sizes by index and is only safe for tails.
+   */
+  resetCount(n: number, estimate: (i: number) => number): void {
+    const sizes = new Float64Array(n);
+    for (let i = 0; i < n; i++) sizes[i] = estimate(i);
+    this.n = n;
+    this.sizes = sizes;
+    this.rebuild();
+  }
+
+  /**
    * O(n) Fenwick construction from `this.sizes` (vs n point updates at
    * O(log n) each). Each node adds its own value then propagates into its
    * parent in one forward pass.

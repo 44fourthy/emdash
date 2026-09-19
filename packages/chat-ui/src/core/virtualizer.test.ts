@@ -56,6 +56,15 @@ describe('Virtualizer — basic', () => {
     expect(v.findIndex(30)).toBe(2);
     expect(v.findIndex(59)).toBe(2);
   });
+
+  it('resetCount reseeds every index after a middle insertion', () => {
+    const v = buildVirt([10, 20, 30]);
+    v.resetCount(4, (index) => [10, 5, 20, 30][index] ?? 0);
+
+    expect(Array.from({ length: v.count }, (_, index) => v.size(index))).toEqual([10, 5, 20, 30]);
+    expect(v.top(3)).toBe(35);
+    expect(v.total()).toBe(65);
+  });
 });
 
 // ── prepend ────────────────────────────────────────────────────────────────────

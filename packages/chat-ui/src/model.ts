@@ -326,7 +326,25 @@ export type TurnOutcomeItem = {
   outcome: TranscriptTurnOutcome;
 };
 
-export type SyntheticItem = ThinkingGroupItem | WorkingItem | TurnOutcomeItem;
+/**
+ * Presentation-only disclosure that summarizes all non-final activity in one
+ * transcript turn. Its child rows stay as independent render units so opening
+ * a long run does not opt out of transcript virtualization.
+ */
+export type ExecutionGroupItem = {
+  kind: 'execution-group';
+  id: string;
+  /** The id toggled by the header (default-open groups use a hide override). */
+  toggleId: string;
+  status: 'working' | 'done' | 'stopped' | 'failed';
+  itemCount: number;
+  active: boolean;
+  expanded: boolean;
+  awaitingPermission?: boolean;
+  error?: string;
+};
+
+export type SyntheticItem = ThinkingGroupItem | WorkingItem | TurnOutcomeItem | ExecutionGroupItem;
 
 export type ChatItem =
   | TranscriptItem

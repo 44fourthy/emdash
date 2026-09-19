@@ -57,6 +57,14 @@ export const fileOpHeader = style({
   },
 });
 
+export const fileOpLeadingIcon = style({
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  flexShrink: 0,
+  opacity: 0.8,
+});
+
 export const monoRunning = style({
   fontFamily: 'monospace',
   fontSize: vars.typeBodyFontSize,

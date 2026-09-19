@@ -45,6 +45,7 @@ import type {
   ChatItem,
   ChatMessage,
   ChatThinking,
+  ExecutionGroupItem,
   SyntheticItem,
   ThinkingGroupItem,
   TranscriptTurn,
@@ -64,6 +65,77 @@ function thinkingGroup(steps: readonly ChatThinking[]): ThinkingGroupItem {
     id: `${steps[0].id}:thinking-group`,
     steps,
   };
+}
+
+function trailingAssistantStartIndex(items: readonly ChatItem[]): number {
+  let index = items.length;
+  while (index > 0) {
+    const item = items[index - 1];
+    if (item?.kind !== 'message' || item.role !== 'assistant') break;
+    index -= 1;
+  }
+  return index < items.length ? index : -1;
+}
+
+function executionStatus(
+  turn: TranscriptTurn,
+  active: boolean,
+  childError?: string,
+  childRunning = false
+): Pick<ExecutionGroupItem, 'status' | 'error'> {
+  if (turn.outcome?.kind === 'error' || childError) {
+    return {
+      status: 'failed',
+      ...(childError
+        ? { error: childError }
+        : turn.outcome?.reason
+          ? { error: turn.outcome.reason.replaceAll('_', ' ') }
+          : {}),
+    };
+  }
+  if (turn.outcome?.kind === 'cancelled' || turn.outcome?.kind === 'interrupted') {
+    return { status: 'stopped' };
+  }
+  return { status: active || (!turn.outcome && childRunning) ? 'working' : 'done' };
+}
+
+function nestedToolItems(item: ChatItem): readonly ChatItem[] {
+  if (!('children' in item) || !Array.isArray(item.children)) return [];
+  return item.children as readonly ChatItem[];
+}
+
+function activityAwaitingPermission(
+  items: readonly ChatItem[],
+  pendingToolCallIds: ReadonlySet<string>
+): boolean {
+  return items.some((item) => {
+    const toolCallId = 'toolCallId' in item ? item.toolCallId : undefined;
+    return (
+      (typeof toolCallId === 'string' && pendingToolCallIds.has(toolCallId)) ||
+      activityAwaitingPermission(nestedToolItems(item), pendingToolCallIds)
+    );
+  });
+}
+
+function activityError(items: readonly ChatItem[]): string | undefined {
+  for (const item of items) {
+    if ('status' in item && item.status === 'error') {
+      if ('error' in item && typeof item.error === 'string') return item.error;
+      return 'A step failed';
+    }
+    const nested = activityError(nestedToolItems(item));
+    if (nested) return nested;
+  }
+  return undefined;
+}
+
+function activityRunning(items: readonly ChatItem[]): boolean {
+  return items.some((item) => {
+    if ('status' in item && (item.status === 'running' || item.status === 'thinking')) {
+      return true;
+    }
+    return activityRunning(nestedToolItems(item));
+  });
 }
 
 // ── ItemNode ──────────────────────────────────────────────────────────────────
@@ -128,8 +200,7 @@ export function flattenTier(
     out.push(...group);
   };
 
-  for (const turn of turns) {
-    const items = turn.items as readonly ChatItem[];
+  const processItems = (items: readonly ChatItem[]): void => {
     for (let i = 0; i < items.length; ) {
       const item = items[i];
       if (item.kind !== 'thinking') {
@@ -144,6 +215,73 @@ export function flattenTier(
       processItem(steps.length === 1 ? item : thinkingGroup(steps));
       i = end;
     }
+  };
+
+  for (const turn of turns) {
+    const items = turn.items as readonly ChatItem[];
+
+    if (ctx.groupTurnActivity) {
+      const trailingAssistantStart = trailingAssistantStartIndex(items);
+      const userItems = items.filter(itemIsUser);
+      const activityItems = items.filter(
+        (item, index) =>
+          !itemIsUser(item) && (trailingAssistantStart < 0 || index < trailingAssistantStart)
+      );
+      const finalAssistants =
+        trailingAssistantStart >= 0 ? items.slice(trailingAssistantStart) : [];
+      const isLiveTurn = ctx.active && ctx.activeTurnId === turn.id;
+      // Once the final response begins, the activity run becomes complete and
+      // auto-collapses even though the turn itself may still be streaming.
+      const groupActive = isLiveTurn && finalAssistants.length === 0;
+      const hasNonDoneOutcome = !!turn.outcome && turn.outcome.kind !== 'done';
+      const shouldShowGroup =
+        activityItems.length > 0 || (groupActive && shouldShowWorking(items)) || hasNonDoneOutcome;
+
+      processItems(userItems);
+
+      if (shouldShowGroup) {
+        const groupId = `${turn.id}:execution`;
+        const outcomeItem = hasNonDoneOutcome
+          ? ({
+              kind: 'turn-outcome',
+              id: `${turn.id}:outcome`,
+              outcome: turn.outcome!,
+            } satisfies SyntheticItem)
+          : undefined;
+        const pendingToolCallIds = ctx.pendingToolCallIds();
+        const childError = activityError(activityItems);
+        // A live turn becomes presentation-complete as soon as its trailing
+        // assistant response begins. Running descendants only mark outcome-less
+        // non-live turns unresolved (for example, retained outgoing history).
+        const childRunning = !isLiveTurn && activityRunning(activityItems);
+        const status = executionStatus(turn, groupActive, childError, childRunning);
+        const defaultOpen = status.status !== 'done';
+        const toggleId = defaultOpen ? `${groupId}:hide` : groupId;
+        const expanded = defaultOpen ? !ctx.expanded(toggleId) : ctx.expanded(toggleId);
+        processItem({
+          kind: 'execution-group',
+          id: groupId,
+          toggleId,
+          ...status,
+          itemCount: activityItems.length + (outcomeItem ? 1 : 0),
+          active: groupActive,
+          expanded,
+          ...(activityAwaitingPermission(activityItems, pendingToolCallIds)
+            ? { awaitingPermission: true }
+            : {}),
+        });
+
+        if (expanded) {
+          processItems(activityItems);
+          if (outcomeItem) processItem(outcomeItem);
+        }
+      }
+
+      processItems(finalAssistants);
+      continue;
+    }
+
+    processItems(items);
 
     if (ctx.active && shouldShowWorking(items)) {
       processItem({ kind: 'working', id: `${turn.id}:working` });
