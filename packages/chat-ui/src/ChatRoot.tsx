@@ -654,9 +654,10 @@ export function ChatRoot(props: ChatRootProps) {
   // of one per measured row (the layout-thrash regression fix).
   let needsProject = false;
 
-  // appliedTop: tracks the last translateY written for each row element.
-  // commit() skips the DOM write when the value hasn't changed.
-  const appliedTop = new Map<number, number>();
+  // appliedTop: tracks the last translateY written to each concrete row element.
+  // Rows can be replaced at the same numeric index during structural edits, so
+  // keying this by element prevents a stale row from suppressing the new write.
+  const appliedTop = new WeakMap<HTMLDivElement, number>();
 
   // lastLayout: previous LayoutSnapshot so commit() can diff field-by-field.
   let lastLayout: LayoutSnapshot | null = null;
@@ -1194,10 +1195,10 @@ export function ChatRoot(props: ChatRootProps) {
     const pt = padTop();
     for (const idx of nextVisible) {
       const top = virt.top(idx) + pt;
-      if (appliedTop.get(idx) !== top) {
-        appliedTop.set(idx, top);
-        const el = rowEls.get(idx);
-        if (el) el.style.transform = `translateY(${top}px)`;
+      const el = rowEls.get(idx);
+      if (el && appliedTop.get(el) !== top) {
+        appliedTop.set(el, top);
+        el.style.transform = `translateY(${top}px)`;
       }
     }
 
@@ -1790,10 +1791,14 @@ export function ChatRoot(props: ChatRootProps) {
                               ref={(el) => {
                                 rowEls.set(unitIndex, el);
                                 // Seed initial transform; commit() reconciles on each frame.
-                                el.style.transform = `translateY(${virt.top(unitIndex) + padTop()}px)`;
+                                const top = virt.top(unitIndex) + padTop();
+                                el.style.transform = `translateY(${top}px)`;
+                                appliedTop.set(el, top);
                                 onCleanup(() => {
-                                  rowEls.delete(unitIndex);
-                                  appliedTop.delete(unitIndex);
+                                  // A surviving unit may already have adopted this numeric
+                                  // slot. Never let the old row delete the new row's owner.
+                                  if (rowEls.get(unitIndex) === el) rowEls.delete(unitIndex);
+                                  appliedTop.delete(el);
                                 });
                               }}
                               data-index={String(unitIndex)}

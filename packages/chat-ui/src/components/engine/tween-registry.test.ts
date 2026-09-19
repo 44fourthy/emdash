@@ -14,7 +14,7 @@
  * - clipHeight(): null at rest, animatedH - gapBefore while animating.
  */
 
-import type { Virtualizer } from '@core/virtualizer';
+import { Virtualizer } from '@core/virtualizer';
 import { createRoot } from 'solid-js';
 import { describe, expect, it, vi } from 'vitest';
 import { collapseAnimationDefaults } from './create-height-tween';
@@ -227,14 +227,63 @@ describe('createTweenRegistry — unregister', () => {
 
     createRoot((dispose) => {
       const reg = createTweenRegistry(virt, () => {}, { reducedMotion: () => false });
-      reg.set('a', () => 0, 100, false);
+      const getIndex = () => 0;
+      reg.set('a', getIndex, 100, false);
 
-      reg.unregister('a');
+      reg.unregister('a', getIndex);
 
       // New registration starts fresh at the new target.
       const handle = reg.set('a', () => 0, 200, false);
       expect(handle.height()).toBe(200);
       expect(handle.animating()).toBe(false);
+
+      dispose();
+    });
+  });
+
+  it('ignores stale cleanup after the item moves to a new row owner', () => {
+    const virt = makeVirt();
+
+    createRoot((dispose) => {
+      const reg = createTweenRegistry(virt, () => {}, { reducedMotion: () => false });
+      const oldOwner = () => 4;
+      const newOwner = () => 1;
+
+      reg.set('a', oldOwner, 100, false);
+      const moved = reg.set('a', newOwner, 100, false);
+      reg.unregister('a', oldOwner);
+
+      const retained = reg.set('a', newOwner, 200, true);
+      expect(moved.height()).toBe(100);
+      expect(retained.height()).toBe(100);
+      expect(retained.animating()).toBe(true);
+
+      dispose();
+    });
+  });
+});
+
+describe('createTweenRegistry — structural reindex', () => {
+  it("restores an unchanged current height at the item's new virtual index", () => {
+    const virt = new Virtualizer();
+    virt.resetCount(8, () => 24);
+    const onHeightChanged = vi.fn();
+
+    createRoot((dispose) => {
+      const reg = createTweenRegistry(virt, onHeightChanged, { reducedMotion: () => false });
+      const oldOwner = () => 7;
+      const newOwner = () => 2;
+
+      reg.set('answer', oldOwner, 160, false);
+      expect(virt.size(7)).toBe(160);
+
+      virt.resetCount(3, () => 24);
+      onHeightChanged.mockClear();
+
+      reg.set('answer', newOwner, 160, false);
+
+      expect(virt.size(2)).toBe(160);
+      expect(onHeightChanged).toHaveBeenCalledWith(2, 136);
 
       dispose();
     });

@@ -232,7 +232,7 @@ export function UnitRow(props: UnitRowProps) {
       tweenHandle = reg.set(itemId, getIndex, target, anim);
     });
 
-    onCleanup(() => reg.unregister(itemId));
+    onCleanup(() => reg.unregister(itemId, getIndex));
   } else {
     // Legacy path: per-row rAF tween (for stories / tests without ChatRoot).
     const localTween = createHeightTween(logicalReserved, { shouldAnimate });
