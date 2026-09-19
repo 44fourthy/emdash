@@ -92,6 +92,17 @@
 :root {
   --em-font-sans: 'Albert Sans Variable', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --em-font-mono: var(--em-font-sans);
+
+  /* Sidebar section palette (light). Referenced by saved section colours, which
+     store the name — not the hex — so a hue can be retuned here per theme. */
+  --section-color-red: #dc2626;
+  --section-color-orange: #ea580c;
+  --section-color-amber: #d97706;
+  --section-color-green: #16a34a;
+  --section-color-teal: #0d9488;
+  --section-color-blue: #2563eb;
+  --section-color-violet: #7c3aed;
+  --section-color-pink: #db2777;
 }
 
 ::selection {
@@ -787,6 +798,16 @@
 }
 
 .emdark {
+  /* Sidebar section palette (dark): lifted for legibility on dark surfaces. */
+  --section-color-red: #f87171;
+  --section-color-orange: #fb923c;
+  --section-color-amber: #fbbf24;
+  --section-color-green: #4ade80;
+  --section-color-teal: #2dd4bf;
+  --section-color-blue: #60a5fa;
+  --section-color-violet: #a78bfa;
+  --section-color-pink: #f472b6;
+
   --chat-fg: var(--foreground);
   --chat-fg-muted: var(--foreground-muted);
   --chat-fg-passive: var(--foreground-passive);

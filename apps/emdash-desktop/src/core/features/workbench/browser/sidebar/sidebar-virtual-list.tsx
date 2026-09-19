@@ -8,7 +8,6 @@ import {
   useDndContext,
   useSensor,
   useSensors,
-  type ClientRect,
   type CollisionDetection,
   type DragEndEvent,
   type DragMoveEvent,
@@ -31,10 +30,30 @@ import { taskViewDef } from '@core/features/tasks/contributions/views';
 import { type SidebarRow } from '@core/features/workbench/browser/sidebar/sidebar-store';
 import { getSidebarStore } from '@core/features/workbench/contributions/browser/app-stores';
 import {
+  UNGROUPED_SECTION_ID,
+  UNGROUPED_SECTION_NAME,
+} from '@core/features/workbench/contributions/mementos';
+import { sectionColorVar } from '@core/features/workbench/contributions/section-appearance';
+import {
   useViewParams,
   useWorkspaceSlots,
 } from '@core/primitives/navigation/browser/navigation-hooks';
 import { SidebarProjectItem } from './project-item';
+import {
+  isCursorAbove,
+  parseDndId,
+  projectDropTarget,
+  rowToDndId,
+  sectionReorderTarget,
+} from './sidebar-dnd';
+import { SidebarMenuRow } from './sidebar-primitives';
+import { SidebarSectionHeader } from './sidebar-section-header';
+import {
+  isLastSibling,
+  rowDepths as computeRowDepths,
+  TREE_GUIDE_INSET_PX,
+  TREE_INDENT_STEP_PX,
+} from './sidebar-tree';
 import { SidebarTaskItem } from './task-item';
 
 const ROW_HEIGHT = 32;
@@ -61,7 +80,24 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
     currentView === 'task' && taskParams.projectId
       ? getSidebarStore().expandedProjectIds.has(taskParams.projectId)
       : null;
+  // Navigating into a project whose section is collapsed reveals that section, which
+  // only adds the target row after this effect has already run once. Tracking the
+  // collapse state re-runs the scroll lookup once the row exists.
+  const activeTargetProjectId =
+    currentView === 'task'
+      ? (taskParams.projectId ?? null)
+      : currentView === 'project'
+        ? (projectParams.projectId ?? null)
+        : null;
+  const activeTargetSectionCollapsed = activeTargetProjectId
+    ? getSidebarStore().collapsedSectionIds.has(
+        getSidebarStore().sectionForProject(activeTargetProjectId)
+      )
+    : null;
+  const hasSections = getSidebarStore().hasSections;
+  const editingSectionId = getSidebarStore().editingSectionId;
   const allDndIds = useMemo(() => rows.map(rowToDndId), [rows]);
+  const rowDepths = useMemo(() => computeRowDepths(rows, hasSections), [rows, hasSections]);
 
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -115,8 +151,19 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
     taskParams.taskId,
     projectParams.projectId,
     activeTaskProjectExpanded,
+    activeTargetSectionCollapsed,
     virtualizer,
   ]);
+
+  // A brand-new section is appended at the end, so its rename input only mounts
+  // once the virtualizer has scrolled that far.
+  useEffect(() => {
+    if (!editingSectionId) return;
+    const editIndex = rowsRef.current.findIndex(
+      (row) => row.kind === 'section' && row.sectionId === editingSectionId
+    );
+    if (editIndex >= 0) virtualizer.scrollToIndex(editIndex, { align: 'auto' });
+  }, [editingSectionId, virtualizer]);
 
   function setCurrentDragPointerY(pointerY: number | null) {
     dragPointerYRef.current = pointerY;
@@ -163,19 +210,37 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
       const overRowIdx = rows.findIndex((r) => rowToDndId(r) === String(over.id));
       if (overRowIdx === -1) return;
       const insertionRowIdx = isAbove ? overRowIdx : overRowIdx + 1;
-      const ids = getSidebarStore()
-        .orderedProjects.map((p) => (p.state === 'unregistered' ? p.id : (p.data?.id ?? '')))
-        .filter(Boolean);
-      const oldIdx = ids.indexOf(aParsed.projectId);
-      if (oldIdx === -1) return;
-      const projectsAbove = rows
-        .slice(0, insertionRowIdx)
-        .filter((r) => r.kind === 'project').length;
-      let newIdx = projectsAbove;
-      if (newIdx > oldIdx) newIdx -= 1;
-      if (newIdx === oldIdx) return;
-      getSidebarStore().setProjectOrder(arrayMove(ids, oldIdx, newIdx));
-    } else if (oParsed.kind === 'task' && oParsed.projectId === aParsed.projectId) {
+      const store = getSidebarStore();
+      const { sectionId, index } = projectDropTarget({
+        rows,
+        insertionRowIdx,
+        overRow: rows[overRowIdx],
+        sectionForProject: (projectId) => store.sectionForProject(projectId),
+        indexInSection: (projectId) =>
+          store
+            .projectsForSection(store.sectionForProject(projectId))
+            .findIndex((project) => project.id === projectId),
+        ungroupedId: UNGROUPED_SECTION_ID,
+      });
+      store.moveProjectToSection(aParsed.projectId, sectionId, index);
+      return;
+    }
+
+    if (aParsed.kind === 'section') {
+      // Section drags only ever land on other section headers, and Ungrouped is not
+      // in `sections`, so a section can never be reordered above it.
+      if (oParsed.kind !== 'section') return;
+      const nextOrder = sectionReorderTarget({
+        sections: getSidebarStore().sections,
+        activeSectionId: aParsed.sectionId,
+        overSectionId: oParsed.sectionId,
+        isAbove,
+      });
+      if (nextOrder) getSidebarStore().setSectionOrder(nextOrder);
+      return;
+    }
+
+    if (oParsed.kind === 'task' && oParsed.projectId === aParsed.projectId) {
       const projectId = aParsed.projectId;
       const taskIds = rows
         .filter(
@@ -211,6 +276,11 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
               const row = rows[vItem.index];
               if (!row) return null;
               const dndId = rowToDndId(row);
+              // Every row of a coloured section draws the same rail, so the
+              // colour reads as one continuous strip down the whole section.
+              const rail = railColorForRow(row);
+              const depth = rowDepths[vItem.index] ?? 0;
+              const lastSibling = isLastSibling(rowDepths, vItem.index);
               const vStyle: React.CSSProperties = {
                 position: 'absolute',
                 top: vItem.start,
@@ -218,15 +288,43 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
                 width: '100%',
                 height: `${vItem.size}px`,
               };
+              if (row.kind === 'section') {
+                return (
+                  <SortableRow
+                    key={`section:${row.sectionId}`}
+                    dndId={dndId}
+                    // Renaming owns the pointer: a drag sensor here would fight text selection.
+                    disabled={getSidebarStore().editingSectionId === row.sectionId}
+                    rail={rail}
+                    style={vStyle}
+                  >
+                    <SidebarSectionHeader sectionId={row.sectionId} />
+                  </SortableRow>
+                );
+              }
               if (row.kind === 'project') {
                 return (
-                  <SortableRow key={row.projectId} dndId={dndId} style={vStyle}>
+                  <SortableRow
+                    key={row.projectId}
+                    dndId={dndId}
+                    rail={rail}
+                    depth={depth}
+                    lastSibling={lastSibling}
+                    style={vStyle}
+                  >
                     <SidebarProjectItem projectId={row.projectId} />
                   </SortableRow>
                 );
               }
               return (
-                <SortableRow key={`${row.projectId}:${row.taskId}`} dndId={dndId} style={vStyle}>
+                <SortableRow
+                  key={`${row.projectId}:${row.taskId}`}
+                  dndId={dndId}
+                  rail={rail}
+                  depth={depth}
+                  lastSibling={lastSibling}
+                  style={vStyle}
+                >
                   <SidebarTaskItem projectId={row.projectId} taskId={row.taskId} />
                 </SortableRow>
               );
@@ -242,30 +340,10 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
   );
 });
 
-const toProjectDndId = (id: string) => `proj::${id}`;
-const toTaskDndId = (projectId: string, taskId: string) => `task::${projectId}::${taskId}`;
-
-type SidebarDndId =
-  | { kind: 'project'; projectId: string }
-  | { kind: 'task'; projectId: string; taskId: string };
-
-function rowToDndId(row: SidebarRow): string {
-  if (row.kind === 'project') return toProjectDndId(row.projectId);
-  return toTaskDndId(row.projectId, row.taskId);
-}
-
-function parseDndId(id: string): SidebarDndId | null {
-  if (id.startsWith('proj::')) return { kind: 'project', projectId: id.slice(6) };
-  if (id.startsWith('task::')) {
-    const [, projectId, taskId] = id.split('::');
-    if (projectId && taskId) return { kind: 'task', projectId, taskId };
-  }
-  return null;
-}
-
 // Project drags consider every visible row so dropping over a task maps to its
 // owning project in onDragEnd without changing the virtualized list mid-drag.
-// Task drags stay restricted to their own project's tasks.
+// Task drags stay restricted to their own project's tasks, and section drags to
+// other section headers.
 const sidebarCollision: CollisionDetection = (args) => {
   const activeId = String(args.active.id);
   const parsed = parseDndId(activeId);
@@ -277,12 +355,23 @@ const sidebarCollision: CollisionDetection = (args) => {
       const cParsed = parseDndId(id);
       return cParsed?.kind === 'task' && cParsed.projectId === parsed.projectId;
     }
+    if (parsed.kind === 'section') {
+      return parseDndId(id)?.kind === 'section';
+    }
     return true;
   });
   const filteredArgs = { ...args, droppableContainers: containers };
   const pointerCollisions = pointerWithin(filteredArgs);
   return pointerCollisions.length > 0 ? pointerCollisions : closestCenter(filteredArgs);
 };
+
+/** Resolved rail colour for a row, or undefined when its section is uncoloured. */
+function railColorForRow(row: SidebarRow): string | undefined {
+  const store = getSidebarStore();
+  const sectionId = row.kind === 'section' ? row.sectionId : store.sectionForProject(row.projectId);
+  const color = store.appearanceForSection(sectionId)?.color;
+  return color ? sectionColorVar(color) : undefined;
+}
 
 function getEventClientY(event: Event): number | null {
   if ('clientY' in event && typeof event.clientY === 'number') return event.clientY;
@@ -293,21 +382,25 @@ function getEventClientY(event: Event): number | null {
   return null;
 }
 
-function isCursorAbove(
-  pointerY: number | null,
-  translated: ClientRect | null,
-  overRect: ClientRect
-): boolean {
-  if (pointerY !== null) return pointerY < overRect.top + overRect.height / 2;
-  if (!translated) return true;
-  const cursorY = translated.top + translated.height / 2;
-  const overCenterY = overRect.top + overRect.height / 2;
-  return cursorY < overCenterY;
-}
-
-function DragOverlayContent({ dndId }: { dndId: string }) {
+const DragOverlayContent = observer(function DragOverlayContent({ dndId }: { dndId: string }) {
   const parsed = parseDndId(dndId);
   if (!parsed) return null;
+
+  if (parsed.kind === 'section') {
+    const section = getSidebarStore().sections.find(
+      (candidate) => candidate.id === parsed.sectionId
+    );
+    return (
+      <div className="px-3">
+        <div className="rounded-lg bg-background-tertiary-2 shadow-md">
+          <SidebarMenuRow className="flex h-8 items-center px-1 font-medium text-foreground-tertiary-passive select-none">
+            {section?.name ?? UNGROUPED_SECTION_NAME}
+          </SidebarMenuRow>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="px-3">
       <div className="rounded-lg bg-background-tertiary-2 shadow-md">
@@ -319,7 +412,7 @@ function DragOverlayContent({ dndId }: { dndId: string }) {
       </div>
     </div>
   );
-}
+});
 
 function InsertionIndicator({ pointerY }: { pointerY: number | null }) {
   const { active, over } = useDndContext();
@@ -336,8 +429,13 @@ function InsertionIndicator({ pointerY }: { pointerY: number | null }) {
   }
   const overRect = over.rect;
   if (!overRect) return null;
-  const isAbove = isCursorAbove(pointerY, active.rect.current.translated, overRect);
-  const top = isAbove ? overRect.top : overRect.top + overRect.height;
+  // A section header always means "top of that section", so the marker sits on its
+  // top edge regardless of which half of the header the cursor is over.
+  const top =
+    overParsed.kind === 'section' ||
+    isCursorAbove(pointerY, active.rect.current.translated, overRect)
+      ? overRect.top
+      : overRect.top + overRect.height;
   return createPortal(
     <div
       className="bg-primary"
@@ -356,15 +454,68 @@ function InsertionIndicator({ pointerY }: { pointerY: number | null }) {
   );
 }
 
+/**
+ * Vertical connectors hanging beneath each ancestor's chevron. The row's own
+ * level ends in an elbow, so the last child of a group reads as a corner rather
+ * than a line running past the end of the group.
+ */
+function treeGuides(depth: number, lastSibling: boolean): React.ReactNode[] {
+  const guides: React.ReactNode[] = [];
+  for (let level = 0; level < depth; level++) {
+    const left = level * TREE_INDENT_STEP_PX + TREE_GUIDE_INSET_PX;
+    const isOwnLevel = level === depth - 1;
+    guides.push(
+      <span
+        key={`down-${level}`}
+        aria-hidden="true"
+        className="pointer-events-none absolute w-px bg-border"
+        style={{ left, top: 0, bottom: isOwnLevel && lastSibling ? '50%' : 0 }}
+      />
+    );
+    if (isOwnLevel) {
+      guides.push(
+        <span
+          key={`across-${level}`}
+          aria-hidden="true"
+          className="pointer-events-none absolute h-px bg-border"
+          style={{
+            left,
+            top: '50%',
+            width: Math.max(0, TREE_INDENT_STEP_PX - TREE_GUIDE_INSET_PX),
+          }}
+        />
+      );
+    }
+  }
+  return guides;
+}
+
 interface SortableRowProps {
   dndId: string;
   style: React.CSSProperties;
   children: React.ReactNode;
+  /** Detach the drag sensor without unmounting the row. */
+  disabled?: boolean;
+  /** Resolved colour for the section rail, if the row's section is coloured. */
+  rail?: string;
+  /** Nesting depth; 0 renders no guides and no extra indent. */
+  depth?: number;
+  /** Whether the row is last of its siblings, which squares off its elbow. */
+  lastSibling?: boolean;
 }
 
-function SortableRow({ dndId, style, children }: SortableRowProps) {
+function SortableRow({
+  dndId,
+  style,
+  children,
+  disabled = false,
+  rail,
+  depth = 0,
+  lastSibling = false,
+}: SortableRowProps) {
   const { setNodeRef, transform, transition, isDragging, listeners } = useSortable({
     id: dndId,
+    disabled,
   });
 
   const combinedStyle: React.CSSProperties = {
@@ -373,10 +524,15 @@ function SortableRow({ dndId, style, children }: SortableRowProps) {
     transition,
     opacity: isDragging ? 0.4 : 1,
     zIndex: isDragging ? 1 : 'auto',
+    // Inset shadow rather than a border: a border would shift every row of a
+    // coloured section sideways from uncoloured rows.
+    boxShadow: rail ? `inset 2px 0 0 0 ${rail}` : undefined,
+    paddingLeft: depth > 0 ? depth * TREE_INDENT_STEP_PX : undefined,
   };
 
   return (
-    <div ref={setNodeRef} style={combinedStyle} {...listeners}>
+    <div ref={setNodeRef} style={combinedStyle} {...(disabled ? {} : listeners)}>
+      {treeGuides(depth, lastSibling)}
       {children}
     </div>
   );

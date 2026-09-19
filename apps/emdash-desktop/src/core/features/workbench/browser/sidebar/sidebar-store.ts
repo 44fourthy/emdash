@@ -5,14 +5,21 @@ import { asAvailableProject } from '@core/features/projects/api/browser/stores/p
 import type { TaskStore } from '@core/features/tasks/api/browser/stores/task-store';
 import { taskManagerStoreToken } from '@core/features/tasks/contributions/browser/project-store-tokens';
 import {
+  UNGROUPED_SECTION_ID,
   workbenchSidebarMemento,
+  type SidebarSection,
   type WorkbenchSidebarState,
 } from '@core/features/workbench/contributions/mementos';
+import {
+  hasAppearance,
+  type SectionAppearance,
+} from '@core/features/workbench/contributions/section-appearance';
 import type { MementoHandle } from '@core/primitives/mementos/browser';
 import {
   registeredTaskData,
   unregisteredTaskData,
 } from '@core/primitives/task-state/browser/task-state';
+import { moveItem } from './sidebar-dnd';
 export type SidebarTaskSortBy = WorkbenchSidebarState['taskSortBy'];
 
 export type TaskSortKind = 'created' | 'updated';
@@ -43,6 +50,7 @@ function isVisibleRegularTask(task: TaskStore): boolean {
 }
 
 export type SidebarRow =
+  | { kind: 'section'; sectionId: string }
   | { kind: 'project'; projectId: string }
   | { kind: 'task'; projectId: string; taskId: string };
 
@@ -50,6 +58,9 @@ export class SidebarStore {
   private _handle: MementoHandle<WorkbenchSidebarState> | undefined;
   private _fallbackState: WorkbenchSidebarState = workbenchSidebarMemento.default;
   private readonly _revealedProjectIds = observable.set<string>();
+  private readonly _revealedSectionIds = observable.set<string>();
+  /** Section whose header is showing its inline rename input, if any. */
+  private _editingSectionId: string | null = null;
 
   constructor(private readonly projectManager: ProjectManagerStore) {
     // `_handle` must stay observable: computeds reading `state` before the
@@ -57,24 +68,50 @@ export class SidebarStore {
     // and freeze at the fallback value forever.
     makeAutoObservable<
       SidebarStore,
-      '_fallbackState' | '_handle' | '_revealedProjectIds' | 'projectManager'
+      | '_fallbackState'
+      | '_handle'
+      | '_revealedProjectIds'
+      | '_revealedSectionIds'
+      | '_editingSectionId'
+      | 'projectManager'
     >(this, {
       _fallbackState: false,
       _handle: observable.ref,
       _revealedProjectIds: false,
+      _revealedSectionIds: false,
+      _editingSectionId: observable.ref,
       projectManager: false,
       expandedProjectIds: computed.struct,
+      collapsedSectionIds: computed.struct,
       sidebarRows: computed,
       pinnedSidebarEntries: computed,
     });
   }
 
-  get projectOrder(): string[] {
-    return this.state.projectOrder;
-  }
-
   get taskOrderByProject(): Record<string, string[]> {
     return this.state.taskOrderByProject;
+  }
+
+  get sections(): readonly SidebarSection[] {
+    return this.state.sections;
+  }
+
+  get hasSections(): boolean {
+    return this.state.sections.length > 0;
+  }
+
+  appearanceForSection(sectionId: string): SectionAppearance | undefined {
+    return this.state.sectionAppearance[sectionId];
+  }
+
+  /**
+   * Sections whose projects are hidden. A section revealed by navigation this
+   * session drops out of the set without touching the persisted collapse state.
+   */
+  get collapsedSectionIds(): ReadonlySet<string> {
+    const collapsed = new Set(this.state.collapsedSectionIds);
+    for (const sectionId of this._revealedSectionIds) collapsed.delete(sectionId);
+    return collapsed;
   }
 
   get expandedProjectIds(): ReadonlySet<string> {
@@ -90,22 +127,52 @@ export class SidebarStore {
     this._handle = handle;
   }
 
+  /** Global recency order. Every section orders its members relative to this. */
   get orderedProjects(): ProjectStore[] {
-    const all = Array.from(this.projectManager.projects.values());
+    return [...this.projectManager.projects.values()].sort((a, b) =>
+      this.compareSidebarProjects(a, b)
+    );
+  }
 
-    return [...all].sort((a, b) => {
-      const ai = this.projectOrder.indexOf(a.id);
-      const bi = this.projectOrder.indexOf(b.id);
-      if (ai === -1 && bi === -1) return this.compareSidebarProjects(a, b);
-      if (ai === -1) return -1;
-      if (bi === -1) return 1;
-      return ai - bi;
-    });
+  /**
+   * Resolve a project's section. An absent or unknown section id resolves to
+   * Ungrouped, the same lazy-filter convention the store already uses for stale
+   * project and task order ids after a project is deleted.
+   */
+  sectionForProject(projectId: string): string {
+    const sectionId = this.state.sectionOfProject[projectId];
+    if (sectionId === undefined || sectionId === UNGROUPED_SECTION_ID) {
+      return UNGROUPED_SECTION_ID;
+    }
+    return this.state.sections.some((section) => section.id === sectionId)
+      ? sectionId
+      : UNGROUPED_SECTION_ID;
+  }
+
+  /** A section's live members in rendered order. */
+  projectsForSection(sectionId: string): ProjectStore[] {
+    const members = this.orderedProjects.filter(
+      (project) => this.sectionForProject(project.id) === sectionId
+    );
+    const stored = this.state.projectOrderBySection[sectionId] ?? [];
+    const byId = new Map(members.map((project) => [project.id, project] as const));
+    const seen = new Set<string>();
+    const ordered: ProjectStore[] = [];
+    for (const id of stored) {
+      const project = byId.get(id);
+      if (project) {
+        ordered.push(project);
+        seen.add(id);
+      }
+    }
+    // Members missing from the stored order are already recency-sorted and are
+    // prepended so they surface at the top rather than after manual entries.
+    return [...members.filter((project) => !seen.has(project.id)), ...ordered];
   }
 
   get sidebarRows(): SidebarRow[] {
     const rows: SidebarRow[] = [];
-    for (const project of this.orderedProjects) {
+    const pushProject = (project: ProjectStore) => {
       const projectId = project.id;
       rows.push({ kind: 'project', projectId });
       const context = asAvailableProject(project);
@@ -122,6 +189,24 @@ export class SidebarStore {
           rows.push({ kind: 'task', projectId, taskId: task.data.id });
         }
       }
+    };
+
+    // Flat until the user creates a section: no headers, and the same order
+    // pre-sections builds produced, so upgrading changes nothing visually.
+    if (!this.hasSections) {
+      for (const project of this.projectsForSection(UNGROUPED_SECTION_ID)) pushProject(project);
+      return rows;
+    }
+
+    rows.push({ kind: 'section', sectionId: UNGROUPED_SECTION_ID });
+    if (!this.collapsedSectionIds.has(UNGROUPED_SECTION_ID)) {
+      for (const project of this.projectsForSection(UNGROUPED_SECTION_ID)) pushProject(project);
+    }
+    for (const section of this.state.sections) {
+      // Emitted even when empty so the section stays visible and droppable-into.
+      rows.push({ kind: 'section', sectionId: section.id });
+      if (this.collapsedSectionIds.has(section.id)) continue;
+      for (const project of this.projectsForSection(section.id)) pushProject(project);
     }
     return rows;
   }
@@ -194,7 +279,15 @@ export class SidebarStore {
     this.updateExpandedProjects((ids) => [...ids, projectId]);
   }
 
+  /**
+   * Reveal a project for navigation. A project inside a collapsed section has no
+   * row at all, so its section is revealed first or the scroll target never exists.
+   */
   revealProject(projectId: string): void {
+    const sectionId = this.sectionForProject(projectId);
+    if (this.state.collapsedSectionIds.includes(sectionId)) {
+      this._revealedSectionIds.add(sectionId);
+    }
     if (!this.expandedProjectIds.has(projectId)) {
       this._revealedProjectIds.add(projectId);
     }
@@ -213,8 +306,158 @@ export class SidebarStore {
     }));
   }
 
-  setProjectOrder(ids: string[]): void {
-    this.updateState((current) => ({ ...current, projectOrder: ids }));
+  get editingSectionId(): string | null {
+    return this._editingSectionId;
+  }
+
+  beginSectionEdit(sectionId: string): void {
+    this._editingSectionId = sectionId;
+  }
+
+  endSectionEdit(): void {
+    this._editingSectionId = null;
+  }
+
+  createSection(name: string, id: string = crypto.randomUUID()): string {
+    this.updateState((current) => ({
+      ...current,
+      sections: [...current.sections, { id, name }],
+    }));
+    return id;
+  }
+
+  renameSection(sectionId: string, name: string): void {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    this.updateState((current) => ({
+      ...current,
+      sections: current.sections.map((section) =>
+        section.id === sectionId ? { ...section, name: trimmed } : section
+      ),
+    }));
+  }
+
+  /**
+   * Merge a colour/icon patch into a section's appearance. An explicit
+   * `undefined` clears that field; once both are clear the entry is dropped so
+   * saved state stays minimal.
+   */
+  setSectionAppearance(sectionId: string, patch: SectionAppearance): void {
+    this.updateState((current) => {
+      const sectionAppearance = { ...current.sectionAppearance };
+      const merged = { ...sectionAppearance[sectionId], ...patch };
+      if (hasAppearance(merged)) sectionAppearance[sectionId] = merged;
+      else delete sectionAppearance[sectionId];
+      return { ...current, sectionAppearance };
+    });
+  }
+
+  setSectionOrder(orderedIds: readonly string[]): void {
+    this.updateState((current) => {
+      const remaining = new Map(current.sections.map((section) => [section.id, section] as const));
+      const ordered: SidebarSection[] = [];
+      for (const id of orderedIds) {
+        const section = remaining.get(id);
+        if (!section) continue;
+        ordered.push(section);
+        remaining.delete(id);
+      }
+      // Sections omitted from the new order keep their relative position at the end.
+      return { ...current, sections: [...ordered, ...remaining.values()] };
+    });
+  }
+
+  toggleSectionCollapsed(sectionId: string): void {
+    const isPersisted = this.state.collapsedSectionIds.includes(sectionId);
+    const isRevealed = this._revealedSectionIds.has(sectionId);
+    if (isPersisted || isRevealed) {
+      this._revealedSectionIds.delete(sectionId);
+      if (isPersisted) {
+        this.updateState((current) => ({
+          ...current,
+          collapsedSectionIds: current.collapsedSectionIds.filter((id) => id !== sectionId),
+        }));
+      }
+      return;
+    }
+    this.updateState((current) => ({
+      ...current,
+      collapsedSectionIds: [...current.collapsedSectionIds, sectionId],
+    }));
+  }
+
+  /** Removes a section and returns its projects to Ungrouped. Projects are never deleted. */
+  deleteSection(sectionId: string): void {
+    if (sectionId === UNGROUPED_SECTION_ID) return;
+    this._revealedSectionIds.delete(sectionId);
+    if (this._editingSectionId === sectionId) this._editingSectionId = null;
+    this.updateState((current) => {
+      const { [sectionId]: _removedOrder, ...projectOrderBySection } =
+        current.projectOrderBySection;
+      const { [sectionId]: _removedAppearance, ...sectionAppearance } = current.sectionAppearance;
+      return {
+        ...current,
+        sections: current.sections.filter((section) => section.id !== sectionId),
+        collapsedSectionIds: current.collapsedSectionIds.filter((id) => id !== sectionId),
+        projectOrderBySection,
+        sectionAppearance,
+        // Freed members carry no order in Ungrouped, so they fall back to recency.
+        sectionOfProject: Object.fromEntries(
+          Object.entries(current.sectionOfProject).filter(([, id]) => id !== sectionId)
+        ),
+      };
+    });
+  }
+
+  /**
+   * Move a project into `sectionId` at `index`, or reorder it within its current
+   * section. Both affected sections' orders are rewritten in full from the
+   * rendered order so an incomplete stored order cannot corrupt the result.
+   */
+  moveProjectToSection(projectId: string, sectionId: string, index: number): void {
+    const fromSection = this.sectionForProject(projectId);
+
+    if (fromSection === sectionId) {
+      const ids = this.projectsForSection(sectionId).map((project) => project.id);
+      const oldIndex = ids.indexOf(projectId);
+      if (oldIndex === -1) return;
+      let target = index;
+      if (target > oldIndex) target -= 1;
+      target = Math.max(0, Math.min(target, ids.length - 1));
+      if (target === oldIndex) return;
+      const next = moveItem(ids, oldIndex, target);
+      this.updateState((current) => ({
+        ...current,
+        projectOrderBySection: { ...current.projectOrderBySection, [sectionId]: next },
+      }));
+      return;
+    }
+
+    const fromIds = this.projectsForSection(fromSection)
+      .map((project) => project.id)
+      .filter((id) => id !== projectId);
+    const toIds = this.projectsForSection(sectionId).map((project) => project.id);
+    const insertionIndex = Math.max(0, Math.min(index, toIds.length));
+    const nextToIds = [
+      ...toIds.slice(0, insertionIndex),
+      projectId,
+      ...toIds.slice(insertionIndex),
+    ];
+
+    this.updateState((current) => {
+      const sectionOfProject = { ...current.sectionOfProject };
+      if (sectionId === UNGROUPED_SECTION_ID) delete sectionOfProject[projectId];
+      else sectionOfProject[projectId] = sectionId;
+      return {
+        ...current,
+        sectionOfProject,
+        projectOrderBySection: {
+          ...current.projectOrderBySection,
+          [fromSection]: fromIds,
+          [sectionId]: nextToIds,
+        },
+      };
+    });
   }
 
   mergeTaskOrder(projectId: string, tasks: TaskStore[]): TaskStore[] {
