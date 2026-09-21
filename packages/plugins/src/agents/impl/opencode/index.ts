@@ -11,6 +11,7 @@ import {
 } from '@emdash/core/services/agent-plugins/api/plugins/helpers';
 import { connectStdioAcp } from '../../helpers/acp-stdio';
 import { opencodeAuthStatus } from './auth';
+import { buildAcpSpawnArgs } from './platform-launcher';
 import { OPENCODE_PLUGIN_CONTENT } from './plugin-file';
 
 const OPENCODE_PLUGIN_PATH = 'plugins/emdash-notifications.js';
@@ -86,10 +87,13 @@ export const provider = registerPluginBehavior(plugin, {
     checkStatus: opencodeAuthStatus,
   },
   acp: {
-    buildSpawn: (ctx) => ({
-      command: ctx.cli,
-      args: ['acp'],
-    }),
+    // Routed through `sh` so the launch-time choice between the platform
+    // launcher and the bare CLI happens on the host, where the launcher's
+    // presence is actually knowable. See platform-launcher.ts.
+    buildSpawn: (ctx) =>
+      process.platform === 'win32'
+        ? { command: ctx.cli, args: ['acp'] }
+        : { command: '/bin/sh', args: buildAcpSpawnArgs(ctx.cli, ['acp']) },
     connect: (io, toClient) => {
       return connectStdioAcp(io, toClient);
     },
