@@ -88,6 +88,24 @@ describe('isGitHubDotComHost', () => {
     expect(isGitHubDotComHost('www.github.com')).toBe(true);
     expect(isGitHubDotComHost('ghe.example.com')).toBe(false);
   });
+
+  it('treats ssh host aliases of github.com as github.com', () => {
+    // `github.com-<alias>` selects a key in ~/.ssh/config; the forge is still
+    // github.com, so account matching and the API base URL must agree.
+    expect(isGitHubDotComHost('github.com-rc3r0')).toBe(true);
+    expect(isGitHubDotComHost('github.com-lif')).toBe(true);
+    expect(isGitHubDotComHost('github.com-44fourthy')).toBe(true);
+    expect(isGitHubDotComHost('GITHUB.COM-Personal')).toBe(true);
+    expect(normalizeRepositoryHost('github.com-rc3r0')).toBe('github.com');
+  });
+
+  it('does not mistake a lookalike domain for github.com', () => {
+    // Any further dot disqualifies the alias form, so a hostile host cannot
+    // be normalized into github.com and inherit its credentials.
+    expect(isGitHubDotComHost('github.com.evil.example')).toBe(false);
+    expect(isGitHubDotComHost('github.com-evil.example')).toBe(false);
+    expect(isGitHubDotComHost('notgithub.com-x')).toBe(false);
+  });
 });
 
 describe('splitNameWithOwner', () => {

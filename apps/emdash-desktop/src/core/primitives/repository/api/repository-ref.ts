@@ -19,7 +19,18 @@ export function isGitHubDotComHost(host: string): boolean {
 
 export function normalizeRepositoryHost(host: string): string {
   const value = host.trim().toLowerCase();
-  return value === 'www.github.com' ? 'github.com' : value;
+  if (value === 'www.github.com') return 'github.com';
+  // An SSH host alias such as `github.com-rc3r0` or `github.com-work` is
+  // github.com reached with a particular key. Git treats it as the same host
+  // and only the identity differs, so it must normalize here too. Otherwise
+  // the repository is mistaken for a GitHub Enterprise instance: the API base
+  // URL becomes https://github.com-rc3r0/api/v3, the connected account fails
+  // to match, and the integration pauses.
+  //
+  // The pattern deliberately excludes any further dot, so a hostile host like
+  // `github.com.evil.example` can never be treated as github.com.
+  if (/^github\.com[-_][a-z0-9_-]+$/.test(value)) return 'github.com';
+  return value;
 }
 
 function stripGitSuffix(value: string): string {
