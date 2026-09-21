@@ -54,11 +54,19 @@ jobs:
         # packages such as @emdash/wire, and a filtered build skips them, so
         # Rollup fails to resolve `@emdash/wire/worker`. nx orders the graph.
         #
-        # Output is tee'd so the log survives the step failing. GitHub only
-        # serves step logs to authenticated callers, so the log is also
-        # uploaded as an artifact, which is retrievable without a token on a
-        # public repository. Without this a red build says nothing beyond
+        # NODE_OPTIONS is set because V8 sizes its default heap from physical
+        # memory, and the macos-14 runner has 7 GB against this workstation's
+        # 62 GB. The renderer bundle is ~17 MB, so bundling is genuinely
+        # memory-hungry, and without an explicit limit the run dies with
+        # "FATAL ERROR: Reached heap limit ... JavaScript heap out of memory"
+        # rather than anything that names the real problem.
+        #
+        # Output is tee'd so the log survives the step failing. GitHub serves
+        # step logs only to authenticated callers, so the log is also uploaded
+        # as an artifact. Without this a red build says nothing beyond
         # "failed".
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: |
           set -o pipefail
           pnpm run build 2>&1 | tee /tmp/build.log
@@ -87,6 +95,9 @@ jobs:
           # used. Enabling this would make electron-builder fail looking for a
           # certificate that does not exist.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # electron-builder repacks the whole app, so it is subject to the
+          # same low default heap on a 7 GB runner.
+          NODE_OPTIONS: --max-old-space-size=6144
         run: |
           pnpm --filter @emdash/emdash-desktop exec electron-builder \
             --mac --arm64 --publish never \
