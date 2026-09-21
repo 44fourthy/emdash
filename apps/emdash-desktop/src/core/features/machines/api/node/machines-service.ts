@@ -108,13 +108,32 @@ export class MachinesService implements Hookable<MachinesServiceHooks> {
     return rows.map(sshConfigFromRow);
   }
 
-  /** The account this host is locked to, or undefined when it has none set. */
-  async getGithubAccountId(connectionId: string): Promise<string | undefined> {
+  /**
+   * What account resolution needs about one host: who it is (so a code-owned
+   * pin can be looked up) and which account was picked for it.
+   */
+  async getGithubAccountContext(connectionId: string): Promise<
+    | {
+        host: string;
+        username: string;
+        storedAccountId: string | undefined;
+      }
+    | undefined
+  > {
     const [row] = await this.deps.db
-      .select({ metadata: sshConnectionsTable.metadata })
+      .select({
+        host: sshConnectionsTable.host,
+        username: sshConnectionsTable.username,
+        metadata: sshConnectionsTable.metadata,
+      })
       .from(sshConnectionsTable)
       .where(eq(sshConnectionsTable.id, connectionId));
-    return row?.metadata?.githubAccountId;
+    if (!row) return undefined;
+    return {
+      host: row.host,
+      username: row.username,
+      storedAccountId: row.metadata?.githubAccountId,
+    };
   }
 
   async getMachineUsage(): Promise<SshConnectionUsage> {

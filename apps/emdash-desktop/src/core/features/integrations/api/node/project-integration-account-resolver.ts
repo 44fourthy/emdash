@@ -23,12 +23,19 @@ export type ProjectIntegrationAccountResolver = (
 export function createProjectIntegrationAccountResolver(deps: {
   getStoredIntegrationAccounts(projectId: string): Promise<StoredIntegrationAccounts>;
   getProjectRepositoryContext(projectId: string): Promise<ProjectAccountRepositoryFacts>;
-  /** Undefined for local projects, which keep their own per-project choice. */
-  getProjectHostAccountLock(projectId: string): Promise<HostAccountLock | undefined>;
+  /**
+   * Undefined for local projects, which keep their own per-project choice.
+   * Receives the resolved inventory because a code-pinned machine resolves its
+   * identity to an account id through it.
+   */
+  getProjectHostAccountLock(
+    projectId: string,
+    accounts: ProviderAccountSummary[]
+  ): Promise<HostAccountLock | undefined>;
   listAccounts(providerId: string): Promise<ProviderAccountSummary[]>;
 }): ProjectIntegrationAccountResolver {
   return async (projectId, providerId, repository) => {
-    const [stored, accounts, repositoryContext, hostAccountLock] = await Promise.all([
+    const [stored, accounts, repositoryContext] = await Promise.all([
       deps.getStoredIntegrationAccounts(projectId),
       deps.listAccounts(providerId),
       repository?.kind === 'project'
@@ -36,8 +43,9 @@ export function createProjectIntegrationAccountResolver(deps: {
             .getProjectRepositoryContext(projectId)
             .then((facts) => ({ kind: 'project' as const, ...facts }))
         : repository,
-      deps.getProjectHostAccountLock(projectId),
     ]);
+    // After the inventory: a code-pinned machine resolves its identity through it.
+    const hostAccountLock = await deps.getProjectHostAccountLock(projectId, accounts);
     return resolveProjectAccount({
       providerId,
       stored,

@@ -98,7 +98,20 @@ export function resolveProviderAccount<A extends ResolvableProviderAccount>(
  * `accountId: null` is not "no opinion": the machine is claimed but has no
  * account set, which resolves to nothing rather than to the desktop's.
  */
-export type HostAccountLock = { accountId: string | null };
+export type HostAccountLock = {
+  accountId: string | null;
+  /**
+   * The provider this lock is about. A machine's account is set for one
+   * provider only, so resolution must ignore it for every other provider
+   * rather than fail them closed as unresolvable.
+   */
+  providerId: string;
+  /**
+   * The identity this machine is pinned to in code, when the fork pins one.
+   * Display only — the lock already resolved `accountId` against it.
+   */
+  pinnedLogin?: string;
+};
 
 /**
  * Resolve under a host lock, which pre-empts both the stored choice and host

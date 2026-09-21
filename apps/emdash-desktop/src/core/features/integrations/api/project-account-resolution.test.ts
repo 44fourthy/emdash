@@ -176,13 +176,16 @@ describe('host account lock', () => {
   function resolve(options: {
     accounts: ProviderAccountSummary[];
     stored?: StoredBaseProjectSettings;
-    hostAccountLock?: { accountId: string | null };
+    /** Provider defaults to github, which is what the fork's policy pins. */
+    hostAccountLock?: { accountId: string | null; providerId?: string; pinnedLogin?: string };
   }) {
     return resolveProjectAccount({
       providerId: 'github',
       stored: options.stored?.integrationAccounts ?? {},
       accounts: options.accounts,
-      hostAccountLock: options.hostAccountLock,
+      hostAccountLock: options.hostAccountLock
+        ? { providerId: 'github', ...options.hostAccountLock }
+        : undefined,
       repository: {
         kind: 'project',
         storedGitSettings: options.stored ?? {},
@@ -251,5 +254,25 @@ describe('host account lock', () => {
     const unlocked = resolve({ accounts });
     expect(locked.contextKey).not.toBe(relocked.contextKey);
     expect(locked.contextKey).not.toBe(unlocked.contextKey);
+  });
+
+  it('leaves other providers on their own policy', () => {
+    // A machine's account belongs to GitHub. GitLab on the same machine must
+    // keep its own resolution rather than be failed closed by a lock that
+    // names an account it has never heard of.
+    const gitlab: ProviderAccountSummary = { ...account('g1'), providerId: 'gitlab' };
+    const result = resolveProjectAccount({
+      providerId: 'gitlab',
+      stored: {},
+      accounts: [gitlab],
+      hostAccountLock: { accountId: 'a1', providerId: 'github' },
+      repository: {
+        kind: 'project',
+        storedGitSettings: {},
+        repoFacts: facts({ remotes: [remote('origin')] }),
+      },
+    });
+    expect(result).toMatchObject({ value: gitlab });
+    expect(result.provenance.kind).not.toBe('unresolvable');
   });
 });

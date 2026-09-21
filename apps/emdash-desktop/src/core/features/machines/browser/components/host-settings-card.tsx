@@ -12,6 +12,7 @@ import {
 import { observer } from 'mobx-react-lite';
 import { useEffect, useState } from 'react';
 import { useAccounts } from '@core/features/integrations/api/browser/use-provider-accounts';
+import { pinnedGithubLoginFor } from '@core/features/integrations/api/machine-account-policy';
 import { detectPlatformContext } from '@core/primitives/keybindings/api';
 import { sortProviderAccountsByDefault } from '@core/primitives/provider-accounts/api';
 import { ProviderAccountLabel } from '@core/primitives/provider-accounts/browser/account-label';
@@ -42,9 +43,12 @@ export const HostSettingsCard = observer(function HostSettingsCard({
     : undefined;
   const syncLocalSettings = machine?.syncLocalSettings ?? false;
   const gitHubAccounts = useAccounts('github');
-  const selectedGitHubAccount = sortProviderAccountsByDefault(gitHubAccounts.data ?? []).find(
-    (account) => account.accountId === machine?.githubAccountId
-  );
+  // Set for machines this fork pins to one identity; those show it read-only.
+  const pinnedLogin = machine ? pinnedGithubLoginFor(machine.host, machine.username) : undefined;
+  const gitHubAccountList = sortProviderAccountsByDefault(gitHubAccounts.data ?? []);
+  const selectedGitHubAccount = pinnedLogin
+    ? gitHubAccountList.find((account) => account.login === pinnedLogin)
+    : gitHubAccountList.find((account) => account.accountId === machine?.githubAccountId);
   const tmuxSupported = machineId !== undefined || detectPlatformContext().os !== 'windows';
   const [shellSetup, setShellSetup] = useState('');
   const [worktreeRoot, setWorktreeRoot] = useState('');
@@ -216,52 +220,78 @@ export const HostSettingsCard = observer(function HostSettingsCard({
             <Field.Root>
               <Field.Label>GitHub account</Field.Label>
               <Field.Description className="text-foreground-muted">
-                Git on this machine authenticates with this machine&apos;s own credentials, so this
-                is the account every project here uses for pull requests and issues. Project-level
-                account choices are ignored while this machine is set. Without one, GitHub
-                integrations stay paused on this machine rather than falling back to this
-                computer&apos;s account.
+                {pinnedLogin
+                  ? 'Account policy in this fork pins this machine to one GitHub identity, so the pairing cannot drift from the key this machine pushes with.'
+                  : 'Git on this machine authenticates with this machine’s own credentials, so this is the account every project here uses for pull requests and issues. Project-level account choices are ignored while this machine is set. Without one, GitHub integrations stay paused on this machine rather than falling back to this computer’s account.'}
               </Field.Description>
-              <Select.Root
-                value={machine?.githubAccountId ?? NOT_SET_OPTION}
-                disabled={machine === undefined}
-                onValueChange={(value) => {
-                  if (!value) return;
-                  void setGithubAccount(value === NOT_SET_OPTION ? null : value);
-                }}
-              >
-                <Select.Trigger className="w-full min-w-0 text-left">
-                  {selectedGitHubAccount ? (
-                    <ProviderAccountLabel account={selectedGitHubAccount} showDefaultBadge />
-                  ) : (
-                    <span className="min-w-0 flex-1 truncate text-left">
-                      {gitHubAccounts.isLoading ? 'Loading accounts…' : 'Not set'}
+              {pinnedLogin ? (
+                <>
+                  <div className="min-h-9 text-sm text-foreground">
+                    {selectedGitHubAccount ? (
+                      <ProviderAccountLabel account={selectedGitHubAccount} showDefaultBadge />
+                    ) : (
+                      <span className="text-foreground-warning">
+                        @{pinnedLogin} — not connected
+                      </span>
+                    )}
+                  </div>
+                  {!selectedGitHubAccount ? (
+                    <span className="text-xs text-foreground-muted">
+                      Connect @{pinnedLogin} as a GitHub account to re-enable pull requests and
+                      issues on this machine.
                     </span>
-                  )}
-                </Select.Trigger>
-                <Select.Content width="trigger" alignItemWithTrigger={false} sideOffset={6}>
-                  <>
-                    {sortProviderAccountsByDefault(gitHubAccounts.data ?? []).map((account) => (
-                      <Select.Item
-                        key={account.accountId}
-                        value={account.accountId}
-                        className="py-2"
-                      >
-                        <ProviderAccountLabel account={account} showDefaultBadge />
-                      </Select.Item>
-                    ))}
-                    <Select.Separator />
-                    <Select.Item value={NOT_SET_OPTION} className="py-2">
-                      <span className="relative -top-px shrink-0">Not set</span>
-                    </Select.Item>
-                  </>
-                </Select.Content>
-              </Select.Root>
-              {!gitHubAccounts.isLoading && (gitHubAccounts.data?.length ?? 0) === 0 ? (
-                <span className="text-xs text-foreground-muted">
-                  No GitHub accounts are connected to this app yet.
-                </span>
-              ) : null}
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <Select.Root
+                    value={machine?.githubAccountId ?? NOT_SET_OPTION}
+                    disabled={machine === undefined}
+                    onValueChange={(value) => {
+                      if (!value) return;
+                      void setGithubAccount(value === NOT_SET_OPTION ? null : value);
+                    }}
+                  >
+                    <Select.Trigger
+                      className="min-w-0 text-left"
+                      // Inline because TriggerButton's own `width: fit-content` variant
+                      // out-specifies a width class, leaving the trigger and — with the
+                      // popup sized to it — every item too narrow to show a name.
+                      style={{ width: '100%' }}
+                    >
+                      {selectedGitHubAccount ? (
+                        <ProviderAccountLabel account={selectedGitHubAccount} showDefaultBadge />
+                      ) : (
+                        <span className="min-w-0 flex-1 truncate text-left">
+                          {gitHubAccounts.isLoading ? 'Loading accounts…' : 'Not set'}
+                        </span>
+                      )}
+                    </Select.Trigger>
+                    <Select.Content alignItemWithTrigger={false} sideOffset={6}>
+                      <>
+                        {sortProviderAccountsByDefault(gitHubAccounts.data ?? []).map((account) => (
+                          <Select.Item
+                            key={account.accountId}
+                            value={account.accountId}
+                            className="py-2"
+                          >
+                            <ProviderAccountLabel account={account} showDefaultBadge />
+                          </Select.Item>
+                        ))}
+                        <Select.Separator />
+                        <Select.Item value={NOT_SET_OPTION} className="py-2">
+                          <span className="relative -top-px shrink-0">Not set</span>
+                        </Select.Item>
+                      </>
+                    </Select.Content>
+                  </Select.Root>
+                  {!gitHubAccounts.isLoading && (gitHubAccounts.data?.length ?? 0) === 0 ? (
+                    <span className="text-xs text-foreground-muted">
+                      No GitHub accounts are connected to this app yet.
+                    </span>
+                  ) : null}
+                </>
+              )}
             </Field.Root>
 
             <Separator />

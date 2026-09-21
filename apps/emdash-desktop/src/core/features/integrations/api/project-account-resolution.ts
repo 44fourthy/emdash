@@ -37,6 +37,9 @@ export function resolveProjectAccount<Account extends ProviderAccountSummary>(op
 }): ProviderAccountResolutionSnapshot<Account> {
   const { accounts, repository, hostAccountLock } = options;
   const choice = options.stored[options.providerId];
+  // A machine sets an account for one provider; other providers on that
+  // machine keep their own policy rather than being failed closed by it.
+  const lock = hostAccountLock?.providerId === options.providerId ? hostAccountLock : undefined;
   let host: string | null = null;
   if (repository?.kind === 'url') {
     host = parseRepositoryRef(repository.url)?.host ?? null;
@@ -47,14 +50,14 @@ export function resolveProjectAccount<Account extends ProviderAccountSummary>(op
     host = facts.remotes.find((remote) => remote.name === baseRemote)?.host ?? null;
   }
   return {
-    ...(hostAccountLock
-      ? resolveHostLockedAccount(accounts, hostAccountLock)
+    ...(lock
+      ? resolveHostLockedAccount(accounts, lock)
       : resolveProviderAccount(
           choice,
           accounts,
           repository ? providerAccountHostMatching(host) : undefined
         )),
     accounts,
-    contextKey: providerAccountContextKey(choice, accounts, hostAccountLock),
+    contextKey: providerAccountContextKey(choice, accounts, lock),
   };
 }

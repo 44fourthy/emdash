@@ -56,16 +56,19 @@ export function useIssues(
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedTerm, setDebouncedTerm] = useState('');
   const accountInventory = useAccounts();
+  const providerAccounts = (provider ? accountInventory.data?.[provider] : undefined) ?? [];
   const projectAccountContext = useObserver(() => {
     if (!projectId)
       return { ready: true, choice: undefined, hostAccountLock: undefined, error: null };
     const settings = getProjectSettingsStore(projectId);
-    const accounts = settings?.durableDomains?.integrationAccounts;
+    const stored = settings?.durableDomains?.integrationAccounts;
     return {
-      ready: accounts !== undefined,
-      choice: provider ? accounts?.stored[provider] : undefined,
+      ready: stored !== undefined,
+      choice: provider ? stored?.stored[provider] : undefined,
       // Observed here so a change to the host's account re-keys the query.
-      hostAccountLock: hostAccountLockForProject(projectId),
+      // Resolved against the same inventory the node resolver lists, since a
+      // code-pinned machine maps its identity to an account id through it.
+      hostAccountLock: hostAccountLockForProject(projectId, providerAccounts),
       error: settings?.pageData.error ?? null,
     };
   });
@@ -73,7 +76,7 @@ export function useIssues(
   // every request comes back `account_context_changed`.
   const accountKey = providerAccountContextKey(
     projectAccountContext.choice,
-    (provider ? accountInventory.data?.[provider] : undefined) ?? [],
+    providerAccounts,
     projectAccountContext.hostAccountLock
   );
   const searchContextKey = JSON.stringify([

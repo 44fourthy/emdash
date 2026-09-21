@@ -41,7 +41,11 @@ import { githubIdentityClient } from '@core/features/github/node/services/github
 import { LegacyGitHubTokenMigrationStore } from '@core/features/github/node/services/legacy-github-token-migration-store';
 import { clearOctokitCache } from '@core/features/github/node/services/octokit-cache';
 import { createGitHubRepositoryService } from '@core/features/github/node/services/repo-service';
-import { lockedConnectionIdFor } from '@core/features/integrations/api/host-account-lock';
+import {
+  GITHUB_PROVIDER_ID,
+  hostAccountLock,
+  lockedConnectionIdFor,
+} from '@core/features/integrations/api/host-account-lock';
 import { createProjectIntegrationAccountResolver } from '@core/features/integrations/api/node/project-integration-account-resolver';
 import { integrationsEvents } from '@core/features/integrations/node/event-host';
 import { IntegrationAccountStore } from '@core/features/integrations/node/integration-account-store';
@@ -520,13 +524,19 @@ export async function bootServices(
       ]);
       return { storedGitSettings, repoFacts };
     },
-    getProjectHostAccountLock: async (projectId) => {
+    getProjectHostAccountLock: async (projectId, accounts) => {
       const project = await getProjectById(db, projectId);
       if (!project) return undefined;
       const connectionId = lockedConnectionIdFor(project);
       if (!connectionId) return undefined;
-      const accountId = await infrastructure.ssh.machines.getGithubAccountId(connectionId);
-      return { accountId: accountId ?? null };
+      const connection = await infrastructure.ssh.machines.getGithubAccountContext(connectionId);
+      if (!connection) return { accountId: null, providerId: GITHUB_PROVIDER_ID };
+      return hostAccountLock({
+        host: connection.host,
+        username: connection.username,
+        storedAccountId: connection.storedAccountId,
+        accounts,
+      });
     },
   });
   // Emdash git credential helper (spec: github-git-settings §4): loopback

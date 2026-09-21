@@ -4,7 +4,6 @@ import { Button, Field, Input, Select, Separator, Switch } from '@emdash/ui/reac
 import { Folder } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useState, type ReactNode } from 'react';
-import { hostAccountLockForProject } from '@core/features/integrations/api/browser/use-host-account-lock';
 import {
   resolveRendererEffectiveSettings,
   useEffectiveSettingsInputs,
@@ -191,9 +190,9 @@ export const BaseProjectSettingsSection = observer(function BaseProjectSettingsS
   return (
     <>
       <IntegrationAccountsSection
+        projectId={projectId}
         integrationAccountsForm={integrationAccountsForm}
         updateIntegrationAccounts={updateIntegrationAccounts}
-        hostAccountLock={hostAccountLockForProject(projectId)}
         repositoryHost={
           inputs && effective
             ? (inputs.repoFacts.remotes.find((remote) => remote.name === effective.baseRemote.value)

@@ -494,13 +494,17 @@ describe('MachinesService', () => {
     );
   });
 
-  it('getGithubAccountId reads back the stored lock', async () => {
+  it('getGithubAccountContext reads back who the host is and what it stores', async () => {
     await insertSshConnection(fixture.db);
-    expect(await service.getGithubAccountId('ssh-1')).toBeUndefined();
-    expect(await service.getGithubAccountId('unknown')).toBeUndefined();
+    expect(await service.getGithubAccountContext('unknown')).toBeUndefined();
+
+    const before = await service.getGithubAccountContext('ssh-1');
+    expect(before?.storedAccountId).toBeUndefined();
+    expect(before?.username).toBe('jona');
 
     await service.setGithubAccount('ssh-1', 'gh-1234');
-    expect(await service.getGithubAccountId('ssh-1')).toBe('gh-1234');
+    const after = await service.getGithubAccountContext('ssh-1');
+    expect(after?.storedAccountId).toBe('gh-1234');
   });
 
   it('saveMachine preserves the GitHub account lock stored in metadata', async () => {
