@@ -76,13 +76,18 @@ jobs:
         # Electron is a different ABI, and a mismatch does not fail the build —
         # it fails at runtime, silently, landing the app in recovery mode.
         # This is the project's own script for exactly this.
+        #
+        # The listing is best-effort: pnpm hoists into a virtual store, so the
+        # package is not at apps/emdash-desktop/node_modules, and a non-zero
+        # find would fail the step under `bash -e` despite the rebuild having
+        # succeeded.
         env:
           NODE_OPTIONS: --max-old-space-size=6144
         run: |
           pnpm --filter @emdash/emdash-desktop run rebuild
-          echo "--- rebuilt native binaries ---"
-          find apps/emdash-desktop/node_modules/better-sqlite3/build -name '*.node' \
-            -exec ls -lh {} \;
+          echo "--- rebuilt native binaries (informational) ---"
+          find . -name 'better_sqlite3.node' -path '*build*' 2>/dev/null \
+            -exec ls -lh {} \; || true
 
       - name: Package (unpacked, so we can sign before archiving)
         env:
