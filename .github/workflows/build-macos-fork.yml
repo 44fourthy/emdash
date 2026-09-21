@@ -53,7 +53,33 @@ jobs:
         # rather than merely convenient: the desktop app imports workspace
         # packages such as @emdash/wire, and a filtered build skips them, so
         # Rollup fails to resolve `@emdash/wire/worker`. nx orders the graph.
-        run: pnpm run build
+        #
+        # Output is tee'd so the log survives the step failing. GitHub only
+        # serves step logs to authenticated callers, so the log is also
+        # uploaded as an artifact, which is retrievable without a token on a
+        # public repository. Without this a red build says nothing beyond
+        # "failed".
+        run: |
+          set -o pipefail
+          pnpm run build 2>&1 | tee /tmp/build.log
+
+      - name: Capture diagnostics
+        if: always()
+        run: |
+          {
+            echo "### environment"
+            node --version; pnpm --version; uname -a; sysctl -n hw.memsize
+            echo "### build log"
+            cat /tmp/build.log 2>/dev/null || echo "(no build log)"
+          } > /tmp/diagnostics.log 2>&1
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-diagnostics
+          path: /tmp/diagnostics.log
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Package for macOS arm64 (unsigned)
         env:
