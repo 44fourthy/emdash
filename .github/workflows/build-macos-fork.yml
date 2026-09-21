@@ -48,8 +48,12 @@ jobs:
           pnpm --filter @emdash/emdash-desktop exec vitest run \
             src/core/primitives/repository/api/repository-ref.test.ts
 
-      - name: Build
-        run: pnpm --filter @emdash/emdash-desktop run build
+      - name: Build all workspace packages
+        # The root script is `nx run-many -t build --all`, which is required
+        # rather than merely convenient: the desktop app imports workspace
+        # packages such as @emdash/wire, and a filtered build skips them, so
+        # Rollup fails to resolve `@emdash/wire/worker`. nx orders the graph.
+        run: pnpm run build
 
       - name: Package for macOS arm64 (unsigned)
         env:
