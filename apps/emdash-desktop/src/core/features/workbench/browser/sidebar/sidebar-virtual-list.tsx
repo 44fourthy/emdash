@@ -57,6 +57,8 @@ import {
 import { SidebarTaskItem } from './task-item';
 
 const ROW_HEIGHT = 32;
+/** Breathing room above each section header, separating one section from the next. */
+const SECTION_GAP_PX = 12;
 
 export const SidebarVirtualList = observer(function SidebarVirtualList() {
   const rows = getSidebarStore().sidebarRows;
@@ -102,9 +104,17 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    // A section header claims the gap above itself, so heights vary by row kind.
+    estimateSize: (index) =>
+      rows[index]?.kind === 'section' ? ROW_HEIGHT + SECTION_GAP_PX : ROW_HEIGHT,
     overscan: 8,
   });
+
+  // Which indices are section rows changes as sections are added, removed or
+  // reordered, so recompute sizes instead of trusting a stale measurement pass.
+  useEffect(() => {
+    virtualizer.measure();
+  }, [rows, virtualizer]);
 
   // Scroll the active project/task into view only when the navigation target itself
   // changes, plus the active task's project expansion state. Re-running on every
@@ -296,6 +306,7 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
                     // Renaming owns the pointer: a drag sensor here would fight text selection.
                     disabled={getSidebarStore().editingSectionId === row.sectionId}
                     rail={rail}
+                    topGap={SECTION_GAP_PX}
                     style={vStyle}
                   >
                     <SidebarSectionHeader sectionId={row.sectionId} />
@@ -502,6 +513,8 @@ interface SortableRowProps {
   depth?: number;
   /** Whether the row is last of its siblings, which squares off its elbow. */
   lastSibling?: boolean;
+  /** Space reserved above the row's content, included in its height. */
+  topGap?: number;
 }
 
 function SortableRow({
@@ -512,6 +525,7 @@ function SortableRow({
   rail,
   depth = 0,
   lastSibling = false,
+  topGap = 0,
 }: SortableRowProps) {
   const { setNodeRef, transform, transition, isDragging, listeners } = useSortable({
     id: dndId,
@@ -528,6 +542,7 @@ function SortableRow({
     // coloured section sideways from uncoloured rows.
     boxShadow: rail ? `inset 2px 0 0 0 ${rail}` : undefined,
     paddingLeft: depth > 0 ? depth * TREE_INDENT_STEP_PX : undefined,
+    paddingTop: topGap > 0 ? topGap : undefined,
   };
 
   return (
