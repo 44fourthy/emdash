@@ -1,5 +1,8 @@
 import type { StoredIntegrationAccounts } from '@core/primitives/project-settings/api/project-settings';
-import type { ProviderAccountResolutionSnapshot } from '@core/primitives/project-settings/api/resolve-provider-account';
+import type {
+  HostAccountLock,
+  ProviderAccountResolutionSnapshot,
+} from '@core/primitives/project-settings/api/resolve-provider-account';
 import type { ProviderAccountSummary } from '@core/primitives/provider-accounts/api';
 import {
   resolveProjectAccount,
@@ -20,10 +23,12 @@ export type ProjectIntegrationAccountResolver = (
 export function createProjectIntegrationAccountResolver(deps: {
   getStoredIntegrationAccounts(projectId: string): Promise<StoredIntegrationAccounts>;
   getProjectRepositoryContext(projectId: string): Promise<ProjectAccountRepositoryFacts>;
+  /** Undefined for local projects, which keep their own per-project choice. */
+  getProjectHostAccountLock(projectId: string): Promise<HostAccountLock | undefined>;
   listAccounts(providerId: string): Promise<ProviderAccountSummary[]>;
 }): ProjectIntegrationAccountResolver {
   return async (projectId, providerId, repository) => {
-    const [stored, accounts, repositoryContext] = await Promise.all([
+    const [stored, accounts, repositoryContext, hostAccountLock] = await Promise.all([
       deps.getStoredIntegrationAccounts(projectId),
       deps.listAccounts(providerId),
       repository?.kind === 'project'
@@ -31,11 +36,13 @@ export function createProjectIntegrationAccountResolver(deps: {
             .getProjectRepositoryContext(projectId)
             .then((facts) => ({ kind: 'project' as const, ...facts }))
         : repository,
+      deps.getProjectHostAccountLock(projectId),
     ]);
     return resolveProjectAccount({
       providerId,
       stored,
       accounts,
+      hostAccountLock,
       repository: repositoryContext,
     });
   };

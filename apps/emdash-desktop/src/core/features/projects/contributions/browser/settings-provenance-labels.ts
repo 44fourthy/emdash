@@ -38,6 +38,8 @@ const SOURCE_LABELS: Record<string, string> = {
   'default account': 'from the default account',
   'only host-matching account': 'from the only matching account',
   'no host-matching account': 'no account matches this repository',
+  'host account': "from this machine's GitHub account",
+  'no host account': 'no account is set for this machine',
   'host default': 'from the host default',
   'built-in default': 'from the built-in default',
 };

@@ -96,6 +96,24 @@ const v4Schema = v3Schema.extend({
 });
 
 // ---------------------------------------------------------------------------
+// v5 schema — adds githubAccountId (per-host GitHub account lock)
+// ---------------------------------------------------------------------------
+
+const v5Schema = v4Schema.extend({
+  /** See the versioned-schema note on v4: declared so dev validation keeps it. */
+  version: z.literal('5').optional(),
+  /**
+   * The connected GitHub account every project on this host uses. Git runs on
+   * the host against the host's own credentials, so pairing the desktop's PR
+   * and issue integration with a matching account is the only way the two
+   * agree. While set, per-project account choices are ignored for this host.
+   * Absent means unset — projects on the host then resolve to no account
+   * rather than silently borrow the desktop's. Desktop-side state.
+   */
+  githubAccountId: z.string().optional(),
+});
+
+// ---------------------------------------------------------------------------
 // Versioned schema
 // ---------------------------------------------------------------------------
 
@@ -110,6 +128,7 @@ const v4Schema = v3Schema.extend({
  * v2: migrates dependencySelections to InstallOverride | null (override-only)
  * v3: adds { kind: 'pinned', realpath } to installOverrideSchema (pass-through)
  * v4: adds syncLocalSettings (absent = false; pass-through)
+ * v5: adds githubAccountId (absent = unset; pass-through)
  */
 export const sshConnectionMetadata = defineVersionedSchema()
   .unversioned(v0Schema)
@@ -144,6 +163,12 @@ export const sshConnectionMetadata = defineVersionedSchema()
     // Pass-through: syncLocalSettings stays unset (false) for existing hosts.
     ...prev,
     version: '4' as const,
+  }))
+  .version('5', v5Schema, (prev) => ({
+    // Pass-through: githubAccountId stays unset for existing hosts, so a host
+    // that has never been configured keeps resolving to no account.
+    ...prev,
+    version: '5' as const,
   }))
   .build();
 
@@ -216,6 +241,24 @@ export function mergeSshConnectionMetadata(
   };
 }
 
+/**
+ * Set (or clear, with `null`) this host's locked GitHub account. Clearing
+ * removes the key rather than storing an empty string, so "unset" stays
+ * distinguishable from "deliberately no account".
+ */
+export function mergeGithubAccountId(
+  existing: SshConnectionMetadata,
+  accountId: string | null
+): SshConnectionMetadata {
+  const next: SshConnectionMetadata = { ...existing, version: '5' };
+  if (accountId === null) {
+    delete next.githubAccountId;
+  } else {
+    next.githubAccountId = accountId;
+  }
+  return next;
+}
+
 /** Merge a single dependency selection into the existing SSH connection metadata. */
 export function mergeDependencySelection(
   existing: SshConnectionMetadata,
@@ -263,5 +306,6 @@ export function sshConfigFromRow(row: SshConnectionConfigRow): SshConfig {
     forwardAgent: metadata.forwardAgent,
     proxyJump: metadata.proxyJump,
     syncLocalSettings: metadata.syncLocalSettings,
+    githubAccountId: metadata.githubAccountId,
   };
 }

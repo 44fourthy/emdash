@@ -91,6 +91,7 @@ describe('createProjectIntegrationAccountResolver', () => {
         };
       },
       listAccounts: async () => accounts,
+      getProjectHostAccountLock: async () => undefined,
     });
   });
 

@@ -11,6 +11,7 @@ import {
 } from '@core/features/workspaces/api/node/registry';
 import { HookCore, type Hookable } from '@core/primitives/hooks/api/hookable';
 import {
+  mergeGithubAccountId,
   mergeSshConnectionMetadata,
   sshConfigFromRow,
   type SshConfig,
@@ -105,6 +106,15 @@ export class MachinesService implements Hookable<MachinesServiceHooks> {
   async getMachines(): Promise<SshConfig[]> {
     const rows = await this.deps.db.select().from(sshConnectionsTable);
     return rows.map(sshConfigFromRow);
+  }
+
+  /** The account this host is locked to, or undefined when it has none set. */
+  async getGithubAccountId(connectionId: string): Promise<string | undefined> {
+    const [row] = await this.deps.db
+      .select({ metadata: sshConnectionsTable.metadata })
+      .from(sshConnectionsTable)
+      .where(eq(sshConnectionsTable.id, connectionId));
+    return row?.metadata?.githubAccountId;
   }
 
   async getMachineUsage(): Promise<SshConnectionUsage> {
@@ -225,7 +235,24 @@ export class MachinesService implements Hookable<MachinesServiceHooks> {
       forwardAgent: metadata.forwardAgent,
       proxyJump: metadata.proxyJump,
       syncLocalSettings: metadata.syncLocalSettings,
+      githubAccountId: metadata.githubAccountId,
     };
+  }
+
+  async setGithubAccount(id: string, accountId: string | null): Promise<SshConfig> {
+    const [row] = await this.deps.db
+      .select()
+      .from(sshConnectionsTable)
+      .where(eq(sshConnectionsTable.id, id));
+    if (!row) throw new Error(`SSH connection ${id} not found`);
+
+    const metadata = mergeGithubAccountId(row.metadata ?? {}, accountId);
+    await this.deps.db
+      .update(sshConnectionsTable)
+      .set({ metadata, updatedAt: new Date(this.now()).toISOString() })
+      .where(eq(sshConnectionsTable.id, id));
+
+    return sshConfigFromRow({ ...row, metadata });
   }
 
   async setSyncLocalSettings(id: string, enabled: boolean): Promise<SshConfig> {
@@ -237,7 +264,7 @@ export class MachinesService implements Hookable<MachinesServiceHooks> {
 
     const metadata: SshConnectionMetadata = {
       ...(row.metadata ?? {}),
-      version: '4',
+      version: '5',
       syncLocalSettings: enabled,
     };
     await this.deps.db

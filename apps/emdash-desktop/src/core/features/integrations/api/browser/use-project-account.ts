@@ -6,6 +6,7 @@ import {
   resolveProjectAccount,
   type ProjectAccountRepository,
 } from '../project-account-resolution';
+import { hostAccountLockForProject } from './use-host-account-lock';
 import { useAccounts } from './use-provider-accounts';
 
 type ProjectAccountOptions = { repository?: ProjectAccountRepository };
@@ -37,6 +38,7 @@ export function useProjectAccount(
     providerId,
     stored: domains.integrationAccounts.stored,
     accounts: options.accepts ? inventory.filter(options.accepts) : inventory,
+    hostAccountLock: hostAccountLockForProject(projectId),
     repository:
       options.repository?.kind === 'project'
         ? {

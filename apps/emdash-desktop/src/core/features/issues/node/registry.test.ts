@@ -74,6 +74,7 @@ describe('repository issue accounts through the shared registry', () => {
         }),
         getStoredIntegrationAccounts: async () => choices,
         listAccounts: mocks.listAccounts,
+        getProjectHostAccountLock: async () => undefined,
       }),
     });
   });

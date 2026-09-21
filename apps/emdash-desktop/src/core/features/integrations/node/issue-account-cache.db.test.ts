@@ -89,6 +89,7 @@ describe('account-bound issue cache across browser and server', () => {
       }),
       getStoredIntegrationAccounts: async () => serverChoices,
       listAccounts: (id) => accounts.listAccounts(id),
+      getProjectHostAccountLock: async () => undefined,
     });
     getIssues = vi.fn(async (host: { credentials: { apiKey: string } }) =>
       ok([

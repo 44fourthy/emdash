@@ -7,13 +7,20 @@ const mocks = vi.hoisted(() => ({
   accounts: vi.fn(),
   settings: vi.fn(),
   repository: vi.fn(),
+  project: vi.fn(),
+  machines: vi.fn(),
 }));
 vi.mock('./use-provider-accounts', () => ({ useAccounts: mocks.accounts }));
 vi.mock('@core/features/projects/api/browser/stores/project-selectors', () => ({
   getProjectSettingsStore: mocks.settings,
+  getProjectStore: () => undefined,
+  projectData: mocks.project,
 }));
 vi.mock('@core/features/source-control/api/browser/stores/source-control-selectors', () => ({
   getGitRepositoryStore: mocks.repository,
+}));
+vi.mock('@core/features/machines/contributions/app-stores', () => ({
+  getMachinesStore: mocks.machines,
 }));
 
 const account: ProviderAccountSummary = {
@@ -31,6 +38,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.accounts.mockReturnValue({ data: [account] });
   mocks.settings.mockReturnValue(settings());
+  // Local project: no host lock, so the per-project choice applies.
+  mocks.project.mockReturnValue(null);
   mocks.repository.mockReturnValue({
     loading: false,
     repoFacts: {
@@ -97,5 +106,34 @@ describe('useProjectAccount', () => {
       provenance: { kind: 'unresolvable' },
       accounts: [],
     });
+  });
+
+  it('uses the machine account for a remote project, ignoring the project pin', () => {
+    const hostAccount: ProviderAccountSummary = {
+      ...account,
+      accountId: 'host',
+      displayName: 'Host',
+      isDefault: false,
+    };
+    mocks.accounts.mockReturnValue({ data: [account, hostAccount] });
+    mocks.project.mockReturnValue({ type: 'ssh', connectionId: 'conn-1' });
+    mocks.machines.mockReturnValue({
+      connections: [{ id: 'conn-1', githubAccountId: 'host' }],
+    });
+    mocks.settings.mockReturnValue(settings({ gitlab: { kind: 'account', accountId: 'work' } }));
+
+    const result = useProjectAccount('project-1', 'gitlab', { repository: { kind: 'project' } });
+    expect(result?.value).toEqual(hostAccount);
+    expect(result?.provenance).toEqual({ kind: 'inferred', from: 'host account' });
+  });
+
+  it('resolves to nothing on a machine with no account set instead of borrowing the pin', () => {
+    mocks.project.mockReturnValue({ type: 'ssh', connectionId: 'conn-1' });
+    mocks.machines.mockReturnValue({ connections: [{ id: 'conn-1' }] });
+    mocks.settings.mockReturnValue(settings({ gitlab: { kind: 'account', accountId: 'work' } }));
+
+    const result = useProjectAccount('project-1', 'gitlab', { repository: { kind: 'project' } });
+    expect(result?.value).toBeNull();
+    expect(result?.provenance).toEqual({ kind: 'inferred', from: 'no host account' });
   });
 });

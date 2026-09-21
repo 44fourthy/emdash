@@ -41,6 +41,7 @@ import { githubIdentityClient } from '@core/features/github/node/services/github
 import { LegacyGitHubTokenMigrationStore } from '@core/features/github/node/services/legacy-github-token-migration-store';
 import { clearOctokitCache } from '@core/features/github/node/services/octokit-cache';
 import { createGitHubRepositoryService } from '@core/features/github/node/services/repo-service';
+import { lockedConnectionIdFor } from '@core/features/integrations/api/host-account-lock';
 import { createProjectIntegrationAccountResolver } from '@core/features/integrations/api/node/project-integration-account-resolver';
 import { integrationsEvents } from '@core/features/integrations/node/event-host';
 import { IntegrationAccountStore } from '@core/features/integrations/node/integration-account-store';
@@ -518,6 +519,14 @@ export async function bootServices(
         attached.success ? attached.data.repoFacts.get() : null,
       ]);
       return { storedGitSettings, repoFacts };
+    },
+    getProjectHostAccountLock: async (projectId) => {
+      const project = await getProjectById(db, projectId);
+      if (!project) return undefined;
+      const connectionId = lockedConnectionIdFor(project);
+      if (!connectionId) return undefined;
+      const accountId = await infrastructure.ssh.machines.getGithubAccountId(connectionId);
+      return { accountId: accountId ?? null };
     },
   });
   // Emdash git credential helper (spec: github-git-settings §4): loopback
