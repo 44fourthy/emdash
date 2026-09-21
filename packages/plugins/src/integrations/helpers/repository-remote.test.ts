@@ -56,6 +56,27 @@ describe('resolveInstanceRemote', () => {
       error: { type: 'invalid_input', message: 'A valid Forgejo instance URL is required.' },
     });
   });
+
+  it('accepts an ssh-aliased github.com remote against a configured github.com', () => {
+    // The shape a per-identity ~/.ssh/config produces: the alias picks the key,
+    // the forge is still github.com.
+    expect(
+      resolveInstanceRemote('git@github.com-rc3r0:acme/repo.git', 'https://github.com', 'GitHub')
+    ).toEqual({
+      success: true,
+      data: { host: 'github.com-rc3r0', slug: 'acme/repo' },
+    });
+  });
+
+  it('still rejects a lookalike host that is not a github.com alias', () => {
+    expect(
+      resolveInstanceRemote(
+        'git@github.com.evil.example:acme/repo.git',
+        'https://github.com',
+        'GitHub'
+      )
+    ).toMatchObject({ success: false, error: { type: 'unsupported_host' } });
+  });
 });
 
 describe('resolveRemoteRepository', () => {
