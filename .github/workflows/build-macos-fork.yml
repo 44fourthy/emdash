@@ -1,0 +1,75 @@
+name: Build macOS (unsigned fork build)
+
+# Produces an unsigned macOS arm64 build from this fork.
+#
+# Why this exists: the fork carries a fix that upstream does not, and building
+# a macOS Electron app from Linux fails at @electron/rebuild, because node-gyp
+# cannot cross-compile native modules from source. A macOS runner is the only
+# place this app can actually be built.
+#
+# Nothing is published. electron-builder's `publish` config points at
+# generalaction/emdash — upstream — so `--publish never` is passed explicitly
+# rather than left to the default, which would attempt a release on a fork.
+
+on:
+  push:
+    branches:
+      - fix/github-ssh-host-alias
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos-arm64:
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+
+      - name: Enable the pinned package manager
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.28.2 --activate
+          pnpm --version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test the repository-ref primitive
+        # The one file this fork changes. Running the project's own suite
+        # against it is the point of building here at all.
+        run: |
+          pnpm --filter @emdash/emdash-desktop exec vitest run \
+            src/core/primitives/repository/api/repository-ref.test.ts
+
+      - name: Build
+        run: pnpm --filter @emdash/emdash-desktop run build
+
+      - name: Package for macOS arm64 (unsigned)
+        env:
+          # No signing identity is present on a runner, so ad-hoc signing is
+          # used. Enabling this would make electron-builder fail looking for a
+          # certificate that does not exist.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          pnpm --filter @emdash/emdash-desktop exec electron-builder \
+            --mac --arm64 --publish never \
+            --config electron-builder.config.ts
+
+      - name: List what was produced
+        run: ls -lh apps/emdash-desktop/release/ || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emdash-macos-arm64-unsigned
+          path: |
+            apps/emdash-desktop/release/*.zip
+            apps/emdash-desktop/release/*.dmg
+          if-no-files-found: error
+          retention-days: 7
