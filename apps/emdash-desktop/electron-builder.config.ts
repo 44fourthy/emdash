@@ -27,7 +27,10 @@ const config: Configuration = {
     },
   ],
   generateUpdatesFilesForAllChannels: false,
-  files: ['out/**/*', 'node_modules/**/*', 'drizzle/**/*'],
+  // Vite's dependency cache lives under node_modules and is rewritten by every dev
+  // and test run. Excluded because it is disposable, unrelated to the app, and
+  // large enough (180MB+ / 14k files) to stall asar assembly when left in.
+  files: ['out/**/*', 'node_modules/**/*', '!node_modules/.vite/**/*', 'drizzle/**/*'],
   asarUnpack: [
     'out/main/adapters/**',
     'node_modules/better-sqlite3/**',
