@@ -307,6 +307,9 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
                     disabled={getSidebarStore().editingSectionId === row.sectionId}
                     rail={rail}
                     topGap={SECTION_GAP_PX}
+                    // Not above the first row: a divider there would read as the
+                    // top edge of the list rather than a break between sections.
+                    topDivider={vItem.index > 0}
                     style={vStyle}
                   >
                     <SidebarSectionHeader sectionId={row.sectionId} />
@@ -515,6 +518,8 @@ interface SortableRowProps {
   lastSibling?: boolean;
   /** Space reserved above the row's content, included in its height. */
   topGap?: number;
+  /** Hairline across the top of the row, drawn inside the gap. */
+  topDivider?: boolean;
 }
 
 function SortableRow({
@@ -526,6 +531,7 @@ function SortableRow({
   depth = 0,
   lastSibling = false,
   topGap = 0,
+  topDivider = false,
 }: SortableRowProps) {
   const { setNodeRef, transform, transition, isDragging, listeners } = useSortable({
     id: dndId,
@@ -547,6 +553,14 @@ function SortableRow({
 
   return (
     <div ref={setNodeRef} style={combinedStyle} {...(disabled ? {} : listeners)}>
+      {topDivider ? (
+        <span
+          aria-hidden
+          // Absolutely positioned so the hairline sits inside the reserved gap
+          // rather than adding a row of height the virtualizer did not measure.
+          className="pointer-events-none absolute inset-x-0 top-0 border-t border-border/50"
+        />
+      ) : null}
       {treeGuides(depth, lastSibling)}
       {children}
     </div>

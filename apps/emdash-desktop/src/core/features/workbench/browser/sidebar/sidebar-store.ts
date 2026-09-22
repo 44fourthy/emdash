@@ -198,15 +198,17 @@ export class SidebarStore {
       return rows;
     }
 
-    rows.push({ kind: 'section', sectionId: UNGROUPED_SECTION_ID });
-    if (!this.collapsedSectionIds.has(UNGROUPED_SECTION_ID)) {
-      for (const project of this.projectsForSection(UNGROUPED_SECTION_ID)) pushProject(project);
-    }
     for (const section of this.state.sections) {
       // Emitted even when empty so the section stays visible and droppable-into.
       rows.push({ kind: 'section', sectionId: section.id });
       if (this.collapsedSectionIds.has(section.id)) continue;
       for (const project of this.projectsForSection(section.id)) pushProject(project);
+    }
+    // Ungrouped sits last: it is the catch-all for unassigned projects, so it
+    // reads as the tail of the list rather than the head of it.
+    rows.push({ kind: 'section', sectionId: UNGROUPED_SECTION_ID });
+    if (!this.collapsedSectionIds.has(UNGROUPED_SECTION_ID)) {
+      for (const project of this.projectsForSection(UNGROUPED_SECTION_ID)) pushProject(project);
     }
     return rows;
   }

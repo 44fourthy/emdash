@@ -285,14 +285,14 @@ describe('SidebarStore sections', () => {
     ]);
   });
 
-  it('renders Ungrouped first and an empty section header after it', () => {
+  it('renders Ungrouped last, after every named section', () => {
     const { store } = sectionsStore();
 
     expect(store.sidebarRows).toEqual([
+      { kind: 'section', sectionId: 'work' },
       { kind: 'section', sectionId: UNGROUPED_SECTION_ID },
       { kind: 'project', projectId: 'p1' },
       { kind: 'project', projectId: 'p2' },
-      { kind: 'section', sectionId: 'work' },
     ]);
   });
 
@@ -303,10 +303,10 @@ describe('SidebarStore sections', () => {
     );
 
     expect(store.sidebarRows).toEqual([
-      { kind: 'section', sectionId: UNGROUPED_SECTION_ID },
-      { kind: 'project', projectId: 'p2' },
       { kind: 'section', sectionId: 'work' },
       { kind: 'project', projectId: 'p1' },
+      { kind: 'section', sectionId: UNGROUPED_SECTION_ID },
+      { kind: 'project', projectId: 'p2' },
     ]);
   });
 
@@ -321,9 +321,9 @@ describe('SidebarStore sections', () => {
     );
 
     expect(store.sidebarRows).toEqual([
+      { kind: 'section', sectionId: 'work' },
       { kind: 'section', sectionId: UNGROUPED_SECTION_ID },
       { kind: 'project', projectId: 'p2' },
-      { kind: 'section', sectionId: 'work' },
     ]);
   });
 
@@ -338,9 +338,9 @@ describe('SidebarStore sections', () => {
     );
 
     expect(store.sidebarRows).toEqual([
-      { kind: 'section', sectionId: UNGROUPED_SECTION_ID },
       { kind: 'section', sectionId: 'work' },
       { kind: 'project', projectId: 'p1' },
+      { kind: 'section', sectionId: UNGROUPED_SECTION_ID },
     ]);
   });
 
@@ -462,10 +462,10 @@ describe('SidebarStore sections', () => {
 
     expect(store.collapsedSectionIds.has('work')).toBe(false);
     expect(store.sidebarRows).toEqual([
-      { kind: 'section', sectionId: UNGROUPED_SECTION_ID },
-      { kind: 'project', projectId: 'p2' },
       { kind: 'section', sectionId: 'work' },
       { kind: 'project', projectId: 'p1' },
+      { kind: 'section', sectionId: UNGROUPED_SECTION_ID },
+      { kind: 'project', projectId: 'p2' },
     ]);
     expect(handle.value.collapsedSectionIds).toEqual(['work']);
   });
