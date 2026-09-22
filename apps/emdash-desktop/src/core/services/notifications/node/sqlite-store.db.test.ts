@@ -44,4 +44,22 @@ describe('SqliteNotificationStore', () => {
     expect(await store.remove(['n-1'])).toEqual({ success: true, data: undefined });
     expect(await store.loadRecent({ since: 0, maxRows: 10 })).toEqual([]);
   });
+
+  it('prunes rows past the retention cutoff and rows overflowing the cap', async () => {
+    fixture = await openFixture('empty');
+    const store = new SqliteNotificationStore(fixture.db);
+
+    for (const [index, createdAt] of [1_000, 2_000, 3_000, 4_000].entries()) {
+      await store.insert({ ...notification, id: `n-${index}`, createdAt });
+    }
+
+    // 1_000 is past the cutoff; 2_000 survives the cutoff but overflows the cap.
+    expect(await store.prune({ olderThan: 1_500, maxRows: 2 })).toEqual({
+      success: true,
+      data: undefined,
+    });
+
+    const remaining = await store.loadRecent({ since: 0, maxRows: 10 });
+    expect(remaining.map((row) => row.id)).toEqual(['n-2', 'n-3']);
+  });
 });

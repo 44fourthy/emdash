@@ -1,5 +1,5 @@
 import { err, ok, type Result } from '@emdash/shared';
-import { desc, gte, inArray, lt } from 'drizzle-orm';
+import { desc, gte, inArray, lt, not } from 'drizzle-orm';
 import type { AppDb } from '@core/services/app-db/node/db';
 import { notifications } from '@core/services/app-db/node/schema';
 import type { AppNotification } from '../api';
@@ -115,12 +115,16 @@ export class SqliteNotificationStore implements NotificationStore {
     try {
       await this.db.delete(notifications).where(lt(notifications.createdAt, options.olderThan));
 
-      const overflow = await this.db
+      // SQLite has no standalone OFFSET — it is only valid after LIMIT — so the
+      // rows past the newest `maxRows` are expressed as the complement of the
+      // rows to keep. Using `.offset()` here would emit a bare `offset ?` and
+      // fail with `near "offset": syntax error`.
+      const keep = this.db
         .select({ id: notifications.id })
         .from(notifications)
         .orderBy(desc(notifications.createdAt))
-        .offset(options.maxRows);
-      await this.remove(overflow.map((row) => row.id));
+        .limit(options.maxRows);
+      await this.db.delete(notifications).where(not(inArray(notifications.id, keep)));
       return ok<void>();
     } catch (error) {
       return err(error instanceof Error ? error.message : String(error));
