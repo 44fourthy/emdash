@@ -49,7 +49,11 @@ export const AddProjectModal = observer(function AddProjectModal({
   connectionId: connectionIdProp,
 }: AddProjectModalProps) {
   const modal = useModalController('addProjectModal');
-  const [strategy, setStrategy] = useState<Strategy>(strategyProp ?? 'local');
+  // Fork default: projects belong on a machine. Local stays the fallback only
+  // when no machine is configured, so the dialog is never unusable.
+  const [strategy, setStrategy] = useState<Strategy>(
+    strategyProp ?? (getMachinesStore().connections.length > 0 ? 'ssh' : 'local')
+  );
   const [mode, setMode] = useState<Mode>(modeProp ?? 'pick');
   const [connectionId, setConnectionId] = useState<string | undefined>(connectionIdProp);
   const [submitState, setSubmitState] = useState<'idle' | 'creating'>('idle');
@@ -308,7 +312,6 @@ export const AddProjectModal = observer(function AddProjectModal({
                   ? deriveConnectionMachineStatusKind(getMachinesStore().stateFor(machineId))
                   : 'idle'
               }
-              onSelectLocal={() => setStrategy('local')}
               onSelectMachine={(nextConnectionId) => {
                 setStrategy('ssh');
                 setConnectionId(nextConnectionId);

@@ -1,7 +1,7 @@
 import { MachineStatus } from '@emdash/ui/react/components';
 import type { MachineStatusKind } from '@emdash/ui/react/components';
 import { DropdownMenu, TriggerButton } from '@emdash/ui/react/primitives';
-import { CheckIcon, HomeIcon, SearchIcon, SettingsIcon } from 'lucide-react';
+import { CheckIcon, SearchIcon, SettingsIcon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { SshConfig } from '@core/primitives/ssh/api';
 import type { Strategy } from './add-project-modal';
@@ -13,7 +13,6 @@ interface LocationSelectorProps {
   connectionId?: string;
   machines: MachineOption[];
   getMachineStatusKind: (machineId: string | undefined) => MachineStatusKind;
-  onSelectLocal: () => void;
   onSelectMachine: (connectionId: string) => void;
   onManageMachines: () => void;
 }
@@ -23,7 +22,6 @@ export function LocationSelector({
   connectionId,
   machines,
   getMachineStatusKind,
-  onSelectLocal,
   onSelectMachine,
   onManageMachines,
 }: LocationSelectorProps) {
@@ -50,30 +48,13 @@ export function LocationSelector({
             aria-label="Project location"
           >
             <span className="flex min-w-0 items-center gap-2">
-              {strategy === 'ssh' ? (
-                <>
-                  <MachineStatus status={triggerStatus} size="0.75rem" />
-                  <span className="min-w-0 truncate">{selectedMachine?.name ?? 'Remote'}</span>
-                </>
-              ) : (
-                <>
-                  <HomeIcon className="size-3" />
-                  <span>Local</span>
-                </>
-              )}
+              <MachineStatus status={triggerStatus} size="0.75rem" />
+              <span className="min-w-0 truncate">{selectedMachine?.name ?? 'Remote'}</span>
             </span>
           </TriggerButton>
         }
       />
       <DropdownMenu.Content align="end" sideOffset={6} style={{ minWidth: '20rem' }}>
-        <DropdownMenu.Item className="items-start py-2" onClick={onSelectLocal}>
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <span className="font-medium">Local</span>
-            <span className="text-xs text-foreground-muted">Add a project from this computer.</span>
-          </div>
-          {strategy === 'local' && <CheckIcon className="mt-0.5 ml-auto size-4" />}
-        </DropdownMenu.Item>
-        <DropdownMenu.Separator />
         <DropdownMenu.Sub>
           <DropdownMenu.SubTrigger className="items-start py-2">
             <RemoteLocationSummary
