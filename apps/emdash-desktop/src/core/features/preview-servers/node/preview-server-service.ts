@@ -19,7 +19,11 @@ import type { ConnectionState } from '@core/primitives/ssh/api';
 import type { SshClientProxy } from '@core/primitives/ssh/api/node/ssh-client-proxy';
 import type { SshConnectionManagerEvent } from '@core/primitives/ssh/api/node/ssh-connection-manager';
 import { PortForwardService, type PortForwardRecord } from './port-forward-service';
-import type { PortForwardProbe, PortForwardProbeResult } from './port-forward-tunnel';
+import {
+  isConnectFailure,
+  type PortForwardProbe,
+  type PortForwardProbeResult,
+} from './port-forward-tunnel';
 
 export type DetectedPreviewUrl = {
   protocol: PreviewServerProtocol;
@@ -515,6 +519,36 @@ export class PreviewServerService {
     const server = this.serverForTunnel(tunnelId);
     if (!server || server.kind !== 'forwarded') return;
     if (server.status.kind === 'failed' && server.localPort === undefined) return;
+
+    // `SSH_OPEN_CONNECT_FAILED` means the remote refused the dial: the target
+    // port is not accepting connections *right now*. That is the ordinary state
+    // while a dev server is still binding, and for a moment after it restarts.
+    // It is not a reason to destroy a healthy forward — the listener stays
+    // usable and the next connection that gets through restores `ready` via
+    // handlePortForwardEstablished. Tearing the tunnel down here is what turned
+    // a starting dev server into a preview that needed a manual re-open.
+    if (isConnectFailure(error)) {
+      log.debug('PreviewServerService: remote preview port is not listening yet', {
+        projectId: server.projectId,
+        workspaceId: server.workspaceId,
+        connectionId: server.connectionId,
+        remotePort: server.remotePort,
+        error: String(error),
+      });
+      this.notListeningTunnels.add(tunnelId);
+      const notListening = this.servers.get(server.id);
+      if (
+        !notListening ||
+        notListening.kind !== 'forwarded' ||
+        notListening.status.kind === 'not-listening'
+      ) {
+        return;
+      }
+      const next: PreviewServer = { ...notListening, status: { kind: 'not-listening' } };
+      this.servers.set(next.id, next);
+      this.emit({ type: 'upsert', server: next });
+      return;
+    }
 
     log.warn('PreviewServerService: SSH preview tunnel connection failed', {
       projectId: server.projectId,

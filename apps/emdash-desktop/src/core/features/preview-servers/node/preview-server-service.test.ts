@@ -590,4 +590,46 @@ describe('PreviewServerService', () => {
     expect(context.closedTunnelIds).toEqual([`preview:${result.data.id}`]);
     expect(context.events.at(-1)).toEqual({ type: 'upsert', server: failed });
   });
+
+  it('keeps the forward and reports not-listening while the remote port is still binding', async () => {
+    let onConnectionError: ((error: Error) => void) | undefined;
+    let onConnectionEstablished: OpenPortForwardTunnelOptions['onConnectionEstablished'];
+    const context = createService({
+      openTunnel: async (request) => {
+        onConnectionError = request.onConnectionError;
+        onConnectionEstablished = request.onConnectionEstablished;
+        return { localPort: 6100, close: async () => {} };
+      },
+    });
+    const result = await context.service.forwardManual({
+      projectId: 'project-1',
+      workspaceId: 'workspace-1',
+      connectionId: 'connection-1',
+      protocol: 'http:',
+      remotePort: 5173,
+    });
+    if (!result.success) throw new Error('manual forward failed');
+
+    // ssh2 attaches the SSH_OPEN_CONNECT_FAILED reason (RFC 4254) to a refused
+    // dial — the shape a dev server that has not bound yet produces.
+    onConnectionError?.(
+      Object.assign(new Error('(SSH) Channel open failure: Connection refused'), { reason: 2 })
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const [waiting] = context.service.listForWorkspace({
+      projectId: 'project-1',
+      workspaceId: 'workspace-1',
+    });
+    expect(waiting).toMatchObject({ id: result.data.id, status: { kind: 'not-listening' } });
+    expect(previewServerUrl(waiting!)).not.toBeNull();
+    expect(context.closedTunnelIds).toEqual([]);
+
+    onConnectionEstablished?.();
+    const [recovered] = context.service.listForWorkspace({
+      projectId: 'project-1',
+      workspaceId: 'workspace-1',
+    });
+    expect(recovered).toMatchObject({ id: result.data.id, status: { kind: 'ready' } });
+  });
 });

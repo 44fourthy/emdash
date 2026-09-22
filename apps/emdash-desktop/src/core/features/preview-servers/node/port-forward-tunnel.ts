@@ -14,7 +14,7 @@ const REMOTE_TARGET_HOSTS = ['127.0.0.1', '::1'] as const;
 // connect to the requested destination, which is the only retryable family miss.
 const SSH_OPEN_CONNECT_FAILED = 2;
 
-function isConnectFailure(error: Error): boolean {
+export function isConnectFailure(error: Error): boolean {
   return (error as { reason?: number }).reason === SSH_OPEN_CONNECT_FAILED;
 }
 
