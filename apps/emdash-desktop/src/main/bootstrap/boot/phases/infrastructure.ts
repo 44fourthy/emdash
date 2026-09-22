@@ -52,11 +52,15 @@ export async function bootInfrastructure(database: DatabaseBundle): Promise<Infr
     powerMonitor.off('resume', resume);
     powerMonitor.off('suspend', suspend);
   });
-  void reconnectIntendedSshConnections(database.db, ssh.ssh);
+  void reconnectIntendedSshConnections(database.db, ssh.ssh, hosts);
   return { ssh, hosts };
 }
 
-async function reconnectIntendedSshConnections(db: AppDb, ssh: SshService): Promise<void> {
+async function reconnectIntendedSshConnections(
+  db: AppDb,
+  ssh: SshService,
+  hosts: Pick<Hosts, 'lifecycle' | 'wake'>
+): Promise<void> {
   try {
     const rows = await db
       .select({ id: sshConnections.id })
@@ -67,6 +71,9 @@ async function reconnectIntendedSshConnections(db: AppDb, ssh: SshService): Prom
       rows.map(async ({ id }) => {
         try {
           await ssh.ensureConnected(id);
+          // Creates the host entry as well as ensuring SSH. Entries are built
+          // lazily, and wake() below only reaches ones that already exist.
+          await hosts.lifecycle.ensureConnected(id);
         } catch (error) {
           log.warn('Failed to reconnect intended SSH connection', {
             connectionId: id,
@@ -75,6 +82,13 @@ async function reconnectIntendedSshConnections(db: AppDb, ssh: SshService): Prom
         }
       })
     );
+
+    // Bring the intended hosts up, not merely reachable. Without this a host
+    // stays idle until a project attaches or the user connects by hand, and
+    // anything that asks for its runtime without waiting — the clone flow, for
+    // one — fails as "Host runtime is not currently usable". Each host still
+    // answers to its own shouldConnect intent.
+    hosts.wake('online');
   } catch (error) {
     log.warn('Failed to load intended SSH connections', { error: String(error) });
   }
