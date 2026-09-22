@@ -5,7 +5,6 @@ import {
   createChatView,
   pinTopMode,
 } from '@emdash/chat-ui';
-import { Agentation } from 'agentation';
 import ReactDOM from 'react-dom/client';
 import { installChatUiRuntime } from '@core/features/conversations/api/browser/chat/chat-ui-runtime';
 import { configureDevPerfClient } from '@core/features/dev-perf/api/browser/client';
@@ -177,9 +176,6 @@ async function bootstrap() {
       <MementoClientProvider client={mementoClient}>
         <SubjectProvider subject={appSubject({})}>
           <App />
-          {/* Visual feedback toolbar: click any element to annotate it and copy
-              structured output an agent can act on. */}
-          <Agentation />
         </SubjectProvider>
       </MementoClientProvider>
     </ErrorBoundary>

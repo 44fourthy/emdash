@@ -195,9 +195,6 @@ importers:
       '@xterm/xterm':
         specifier: ^6.0.0
         version: 6.0.0
-      agentation:
-        specifier: ^3.1.1
-        version: 3.1.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -4414,17 +4411,6 @@ packages:
   agent-base@7.1.4:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
     engines: {node: '>= 14'}
-
-  agentation@3.1.1:
-    resolution: {integrity: sha512-AaP9/72QLrwpJQegyUaWF2PGNXA4HKh/izLqTFjwOJt3lGODsgKTUJW0HO6CwU5cwa31QxX/7tN63LS4FbQVzQ==}
-    peerDependencies:
-      react: '>=18.0.0'
-      react-dom: '>=18.0.0'
-    peerDependenciesMeta:
-      react:
-        optional: true
-      react-dom:
-        optional: true
 
   ajv-formats@3.0.1:
     resolution: {integrity: sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ==}
@@ -12383,11 +12369,6 @@ snapshots:
       - supports-color
 
   agent-base@7.1.4: {}
-
-  agentation@3.1.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
-    optionalDependencies:
-      react: 19.2.7
-      react-dom: 19.2.7(react@19.2.7)
 
   ajv-formats@3.0.1(ajv@8.20.0):
     optionalDependencies:
