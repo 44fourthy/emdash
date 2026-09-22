@@ -8,12 +8,9 @@
 @custom-variant emdark (&:is(.emdark *));
 
 @theme inline {
-  /* Inter Variable is loaded in main.tsx (@fontsource-variable/inter) and
-     matches @emdash/ui's --em-font-sans so both kits share one typeface. */
-  --font-sans:
-    'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu,
-    Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
-  --font-mono: Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  /* OpenDesign's UI typeface, loaded in main.tsx. */
+  --font-sans: 'Albert Sans Variable', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Albert Sans Variable', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 
   --text-tiny: 11px;
   --text-tiny--line-height: 1.3;
@@ -90,6 +87,22 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+}
+
+:root {
+  --em-font-sans: 'Albert Sans Variable', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --em-font-mono: var(--em-font-sans);
+
+  /* Sidebar section palette (light). Referenced by saved section colours, which
+     store the name — not the hex — so a hue can be retuned here per theme. */
+  --section-color-red: #dc2626;
+  --section-color-orange: #ea580c;
+  --section-color-amber: #d97706;
+  --section-color-green: #16a34a;
+  --section-color-teal: #0d9488;
+  --section-color-blue: #2563eb;
+  --section-color-violet: #7c3aed;
+  --section-color-pink: #db2777;
 }
 
 ::selection {
@@ -768,17 +781,15 @@
   --chat-diff-deleted: var(--foreground-diff-deleted);
   --chat-diff-modified: var(--foreground-diff-modified);
   --chat-link: var(--foreground-info);
-  --chat-bubble-user: var(--background-3);
-  --chat-bubble-user-fg: var(--foreground);
+  --chat-bubble-user: var(--foreground);
+  --chat-bubble-user-fg: var(--background);
   --chat-mention-bg: var(--background-info);
   --chat-mention-fg: var(--foreground-info);
   --chat-code-bg: var(--background-1);
   --chat-code-inline-bg: rgba(0, 0, 0, 0.06);
   --chat-table-header-bg: var(--background-1);
-  --chat-font-sans:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Fira Sans',
-    'Droid Sans', 'Helvetica Neue', sans-serif;
-  --chat-font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', Menlo, Monaco, Consolas, monospace;
+  --chat-font-sans: var(--em-font-sans);
+  --chat-font-mono: var(--em-font-sans);
   --chat-radius-sm: 0.375rem;
   --chat-radius-md: 0.5rem;
   --chat-radius-lg: 0.625rem;
@@ -787,6 +798,16 @@
 }
 
 .emdark {
+  /* Sidebar section palette (dark): lifted for legibility on dark surfaces. */
+  --section-color-red: #f87171;
+  --section-color-orange: #fb923c;
+  --section-color-amber: #fbbf24;
+  --section-color-green: #4ade80;
+  --section-color-teal: #2dd4bf;
+  --section-color-blue: #60a5fa;
+  --section-color-violet: #a78bfa;
+  --section-color-pink: #f472b6;
+
   --chat-fg: var(--foreground);
   --chat-fg-muted: var(--foreground-muted);
   --chat-fg-passive: var(--foreground-passive);
@@ -819,10 +840,8 @@
   --chat-code-bg: var(--background-2);
   --chat-code-inline-bg: rgba(255, 255, 255, 0.08);
   --chat-table-header-bg: var(--background-2);
-  --chat-font-sans:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Fira Sans',
-    'Droid Sans', 'Helvetica Neue', sans-serif;
-  --chat-font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', Menlo, Monaco, Consolas, monospace;
+  --chat-font-sans: var(--em-font-sans);
+  --chat-font-mono: var(--em-font-sans);
   --chat-radius-sm: 0.375rem;
   --chat-radius-md: 0.5rem;
   --chat-radius-lg: 0.625rem;

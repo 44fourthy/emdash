@@ -21,3 +21,11 @@ export const collapsibleCard = style({
   boxSizing: 'border-box',
   height: collapsibleCardVars.height,
 });
+
+/** A quiet one-line activity row until its detail body is opened. */
+export const collapsibleCardActivity = style({
+  borderColor: 'transparent',
+  selectors: {
+    '&[data-body-visible]': { borderColor: vars.border },
+  },
+});

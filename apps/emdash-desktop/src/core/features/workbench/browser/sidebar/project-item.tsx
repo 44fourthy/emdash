@@ -1,15 +1,5 @@
 import { ContextMenu, Tooltip } from '@emdash/ui/react/primitives';
-import {
-  ChevronRight,
-  FolderClosed,
-  FolderInput,
-  FolderOpen,
-  Loader2,
-  Pencil,
-  Plus,
-  Trash2,
-  TriangleAlert,
-} from 'lucide-react';
+import { ChevronRight, Loader2, Pencil, Plus, Trash2, TriangleAlert } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import React, { useCallback, useEffect } from 'react';
 import { ConnectionStatusDot } from '@core/features/machines/contributions/browser/connection-status-dot';
@@ -102,7 +92,6 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
         ? 'connecting'
         : 'disconnected'
       : 'connected';
-  const ProjectIcon = isSshProject ? FolderInput : isExpanded ? FolderOpen : FolderClosed;
   const projectLabel = project.name ?? 'project';
   const createAvailability = taskHostActionAvailability(projectId);
   const createDisabledReason =
@@ -144,19 +133,19 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
             {project.state === 'unregistered' ? (
               renderSpinnerWithTooltip()
             ) : (
+              // Chevron only: the folder icon is gone so sections own the icons,
+              // but this stays as it is the only control that collapses a project.
               <SidebarItemMiniButton
                 type="button"
                 aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${projectLabel}`}
-                className="relative"
                 onClick={(e) => {
                   e.stopPropagation();
                   getSidebarStore().toggleProjectExpanded(projectId);
                 }}
               >
-                <ProjectIcon className="absolute h-4 w-4 opacity-100 transition-opacity duration-150 group-hover/row:opacity-0" />
                 <ChevronRight
                   className={cn(
-                    'absolute h-4 w-4 transition-all duration-150 opacity-0 group-hover/row:opacity-100',
+                    'h-4 w-4 transition-transform duration-150',
                     isExpanded && 'rotate-90'
                   )}
                 />

@@ -265,6 +265,10 @@ export async function prepareCreateTask(
             ...(ic.autoApprove !== undefined && { autoApprove: ic.autoApprove }),
             ...(initialQueue?.length && { initialQueue }),
             ...(ic.model && { model: ic.model }),
+            // Re-applied when the session starts, so a task-created
+            // conversation opens on the chosen effort rather than the
+            // provider's own default.
+            ...(ic.effort && { effort: ic.effort }),
           }
         : {
             version: '1',

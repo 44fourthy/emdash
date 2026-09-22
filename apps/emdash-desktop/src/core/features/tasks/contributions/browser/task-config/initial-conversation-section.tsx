@@ -1,3 +1,4 @@
+import { formatHostRef } from '@emdash/core/primitives/host/api';
 import type { AgentProviderId } from '@emdash/plugins/agents/types';
 import { ChatComposer } from '@emdash/ui/react/components';
 import type { CommandItem, MentionItem, PromptEditorRef } from '@emdash/ui/react/components';
@@ -17,6 +18,8 @@ import type { AgentDisableReason } from '@core/features/agents/api/browser/compo
 import { useAgents } from '@core/features/agents/api/browser/use-agents';
 import { AgentSelector } from '@core/features/agents/contributions/browser/agent-selector';
 import { useEffectiveProvider } from '@core/features/conversations/api/browser/use-effective-provider';
+import { providerPreference } from '@core/features/conversations/browser/provider-preferences';
+import { providerPreferencesMemento } from '@core/features/conversations/contributions/mementos';
 import { IntegrationIcon } from '@core/features/integrations/contributions/browser/integration-icon';
 import { usePromptLibrary } from '@core/features/library/api/browser/prompts/use-prompt-library';
 import { getProjectSshConnectionId } from '@core/features/projects/api/browser/stores/project-selectors';
@@ -34,6 +37,7 @@ import {
   parseIssueMentionToken,
 } from '@core/primitives/issues/api';
 import type { LinkedIssue } from '@core/primitives/linked-issues/api';
+import { useMemento } from '@core/primitives/mementos/react';
 import { useLocalStorage } from '@core/primitives/react-hooks/browser/useLocalStorage';
 import { cn } from '@core/primitives/styling/browser/cn';
 
@@ -54,6 +58,11 @@ export type InitialConversationState = {
   /** Selected model id, or null to use the agent CLI default. */
   model: string | null;
   setModel: (model: string | null) => void;
+  /**
+   * Provider reasoning/effort id for this conversation, inherited from the
+   * provider's saved preference. Null lets the agent use its own default.
+   */
+  effort: string | null;
   connectionId?: string;
   /** Whether to start this conversation as an ACP chat UI conversation. */
   useChatUi: boolean;
@@ -78,6 +87,7 @@ export function useInitialConversationState(
   const connectionId = projectId ? getProjectSshConnectionId(projectId) : undefined;
   const { providerId, setProviderOverride } = useEffectiveProvider(connectionId, initialProvider);
   const { data: agents } = useAgents(hostRefFromConnectionId(connectionId));
+  const [providerPreferences] = useMemento(providerPreferencesMemento);
   const [prompt, setPrompt] = useState('');
   const [issueContext, setIssueContext] = useState<string | null>(null);
   const [autoApprovePreference, setAutoApprovePreference] = useLocalStorage(
@@ -118,6 +128,17 @@ export function useInitialConversationState(
   const acpSupported = agentSupportsAcp(capabilities);
   const useChatUi = acpSupported && useChatUiPreference;
   const initialPromptSupported = useChatUi || agentSupportsInitialPromptDelivery(capabilities);
+  // The provider's saved effort, carried into the task so its session starts on
+  // the same one the conversation dialog would use rather than the agent's own
+  // default. Read through the same memento that dialog writes.
+  const effort = providerId
+    ? (providerPreference(
+        providerPreferences,
+        formatHostRef(hostRefFromConnectionId(connectionId)),
+        providerId,
+        useChatUi ? 'acp' : 'pty'
+      ).effort ?? null)
+    : null;
 
   return {
     provider: providerId,
@@ -133,6 +154,7 @@ export function useInitialConversationState(
     setIssueContextEditorOpen,
     model,
     setModel,
+    effort,
     connectionId,
     useChatUi,
     setUseChatUi: setUseChatUiPreference,

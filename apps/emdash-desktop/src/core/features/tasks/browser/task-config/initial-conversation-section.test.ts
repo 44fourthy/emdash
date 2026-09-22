@@ -114,6 +114,18 @@ vi.mock('@core/features/conversations/api/browser/use-effective-provider', () =>
   }),
 }));
 
+// The hook reads the provider's saved effort from a memento. These cases are
+// about prompt/provider state, not effort, so the memento resolves to an empty
+// state rather than needing a SubjectProvider around every render.
+vi.mock('@core/primitives/mementos/react', () => {
+  const state = {};
+  return { useMemento: () => [state] };
+});
+
+vi.mock('@core/features/conversations/browser/provider-preferences', () => ({
+  providerPreference: () => ({}),
+}));
+
 type InitialConversationOptions = Parameters<typeof useInitialConversationState>[3];
 
 let latestState: InitialConversationState | undefined;

@@ -7,6 +7,7 @@ import { observe, remote } from '@emdash/wire/state';
 import type { Terminal } from '@xterm/xterm';
 import { action, computed, makeObservable, observable, reaction, runInAction } from 'mobx';
 import { conversationsContract } from '@core/features/conversations/api';
+import { isGeneratedConversationTitle } from '@core/features/conversations/api/browser/conversation-title-utils';
 // TODO(conversations-extraction): Inject file-link handlers instead of importing task editor plumbing.
 import { makeFileLinkHandlers } from '@core/features/editor/api/browser/open-file-in-file-editor';
 import {
@@ -296,6 +297,26 @@ export class ConversationManagerStore implements Disposable {
         }
       }
     });
+    this.adoptAgentTitles(list);
+  }
+
+  /**
+   * Take the agent's own name for a conversation, so a tab reads as what the
+   * conversation is about instead of `Opencode (2)`.
+   *
+   * Only while the title is still the one we generated: anything the user
+   * typed fails that check and is never overwritten. Re-running is a no-op
+   * because the stored title then equals the agent's.
+   */
+  private adoptAgentTitles(list: Record<string, SessionSummary>): void {
+    for (const [conversationId, session] of Object.entries(list)) {
+      const agentTitle = session.title?.trim();
+      if (!agentTitle) continue;
+      const store = this.conversations.get(conversationId);
+      if (!store || store.data.title === agentTitle) continue;
+      if (!isGeneratedConversationTitle(store.data.title, store.data.providerId)) continue;
+      void this.renameConversation(conversationId, agentTitle);
+    }
   }
 
   private listenToConversationCreated(): () => void {

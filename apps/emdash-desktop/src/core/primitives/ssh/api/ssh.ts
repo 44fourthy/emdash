@@ -20,6 +20,14 @@ export interface SshConfig {
    * Stored in connection metadata; absent means false.
    */
   syncLocalSettings?: boolean;
+  /**
+   * The desktop-connected GitHub account every project on this host uses. Git
+   * runs on the host with the host's own credentials, so the account driving
+   * the desktop's PR and issue integration has to be the one that matches it;
+   * while this is set, per-project account choices are ignored on this host.
+   * Stored in connection metadata; absent means unset.
+   */
+  githubAccountId?: string;
 }
 
 /**

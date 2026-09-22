@@ -21,8 +21,21 @@ export const collapseRowHover = style({
 export const collapseHeader = style([
   collapseRow,
   collapseRowHover,
-  { fontSize: vars.typeBodyFontSize },
+  {
+    width: '100%',
+    minWidth: 0,
+    flex: 1,
+    fontSize: vars.typeBodyFontSize,
+  },
 ]);
+
+export const collapseIcon = style({
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  flexShrink: 0,
+  opacity: 0.8,
+});
 
 export const chevron = style({
   display: 'inline-block',

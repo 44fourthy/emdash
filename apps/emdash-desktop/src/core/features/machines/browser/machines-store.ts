@@ -170,6 +170,13 @@ export class MachinesStore {
     });
   }
 
+  async setGithubAccount(id: string, accountId: string | null): Promise<void> {
+    await this.withMutation(async () => {
+      const updated = await (await this.getMachinesClient()).setGithubAccount({ id, accountId });
+      this.connectionsResource.setValue(this.upsertConnection(updated));
+    });
+  }
+
   async getSshConfigHosts(): Promise<SshConfigHost[]> {
     return await (await this.getSshClient()).getSshConfigHosts(undefined);
   }

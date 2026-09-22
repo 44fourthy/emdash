@@ -1,4 +1,4 @@
-import type { ChatContext } from '@emdash/chat-ui';
+import { DEFAULT_CONFIG, type ChatConfig, type ChatContext } from '@emdash/chat-ui';
 import { getIntegrationsClient } from '@core/features/integrations/api/browser/client';
 import { registerIssueMentionIcons } from '@core/primitives/issues/browser/issue-mention-icons';
 import { advertisedCommandProvider } from './advertised-command-provider';
@@ -7,6 +7,22 @@ import { getChatUiRuntime } from './chat-ui-runtime';
 
 let shared: ChatContext | null = null;
 let didPreloadIssueMentionIcons = false;
+
+const OPEN_DESIGN_FONT_STACK = [
+  'Albert Sans Variable',
+  'PingFang SC',
+  'Microsoft YaHei',
+  'sans-serif',
+];
+
+const OPEN_DESIGN_CHAT_CONFIG: ChatConfig = {
+  ...DEFAULT_CONFIG,
+  fonts: {
+    ...DEFAULT_CONFIG.fonts,
+    sans: OPEN_DESIGN_FONT_STACK,
+    mono: OPEN_DESIGN_FONT_STACK,
+  },
+};
 
 /**
  * Create the process-long ChatContext. Call once from the renderer bootstrap
@@ -20,6 +36,7 @@ export function initSharedChatContext(): ChatContext {
   if (!shared) {
     preloadIssueMentionIcons();
     shared = getChatUiRuntime().createChatContext({
+      config: OPEN_DESIGN_CHAT_CONFIG,
       mentionProvider: chatMentionProvider,
       commandProvider: advertisedCommandProvider,
     });

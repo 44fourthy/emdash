@@ -29,14 +29,11 @@ import { SidebarMenuAction, SidebarMenuRow } from './sidebar-primitives';
 interface SidebarTaskItemProps {
   taskId: string;
   projectId: string;
-  /** Pinned strip uses tighter padding than tasks nested under a project. */
-  rowVariant?: 'underProject' | 'pinned';
 }
 
 export const SidebarTaskItem = observer(function SidebarTaskItem({
   taskId,
   projectId,
-  rowVariant = 'underProject',
 }: SidebarTaskItemProps) {
   const { navigate } = useNavigate();
   const openRename = useOpenModal('renameTaskModal');
@@ -108,10 +105,10 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
       onDelete={handleDelete}
     >
       <SidebarMenuRow
-        className={cn(
-          'group/row flex items-center justify-between px-1 py-1.5 h-8 gap-1',
-          rowVariant === 'pinned' ? 'pl-2' : 'pl-8'
-        )}
+        // Left padding keeps the name off its own row edge — noticeable on the
+        // active row, whose background fill would otherwise touch the text. The
+        // tree indent already carries the nesting, so this stays small.
+        className="group/row flex h-8 items-center justify-between gap-1 py-1.5 pr-1 pl-2"
         isActive={isActive}
         onMouseDown={(e) => e.preventDefault()}
         onClick={openTask}

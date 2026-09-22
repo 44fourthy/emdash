@@ -339,7 +339,7 @@ export function useWorkspaceConfig(opts: {
 
     return (
       workspaceOptions.find((ws) => {
-        if (ws.kind === 'repository' || ws.disabledReason) return false;
+        if (ws.disabledReason) return false;
         const effective = ws.branchName;
         if (!effective) return false;
         // Normalize away a possible "remote/" prefix (e.g. "origin/main" → "main")

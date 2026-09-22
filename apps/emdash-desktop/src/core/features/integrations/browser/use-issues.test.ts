@@ -21,6 +21,9 @@ vi.mock('@core/features/integrations/api/browser/client', () => ({
 }));
 vi.mock('@core/features/projects/api/browser/stores/project-selectors', () => ({
   getProjectSettingsStore: mocks.getProjectSettingsStore,
+  // These cases cover local projects, which keep their own account choice.
+  getProjectStore: () => undefined,
+  projectData: () => null,
 }));
 
 vi.mock('@core/features/issues/api/browser/client', () => ({

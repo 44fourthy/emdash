@@ -450,6 +450,82 @@ describe('MachinesService', () => {
     );
   });
 
+  it('setGithubAccount persists the lock without dropping the connection', async () => {
+    await insertSshConnection(fixture.db);
+    const mutatedEvents: unknown[] = [];
+    service.on('machine:mutated', (event) => {
+      mutatedEvents.push(event);
+    });
+
+    const updated = await service.setGithubAccount('ssh-1', 'gh-1234');
+    expect(updated).toMatchObject({ id: 'ssh-1', githubAccountId: 'gh-1234' });
+
+    const [row] = await fixture.db
+      .select()
+      .from(sshConnections)
+      .where(eq(sshConnections.id, 'ssh-1'));
+    expect(row?.metadata?.githubAccountId).toBe('gh-1234');
+
+    // Locking an account must not invalidate the pinned host connection.
+    expect(dropConnection).not.toHaveBeenCalled();
+    expect(mutatedEvents).toEqual([]);
+
+    await service.setGithubAccount('ssh-1', null);
+    const after = await service.getMachines();
+    expect(after.find((machine) => machine.id === 'ssh-1')?.githubAccountId).toBeUndefined();
+  });
+
+  it('setGithubAccount keeps the stored sync toggle', async () => {
+    await insertSshConnection(fixture.db);
+    await service.setSyncLocalSettings('ssh-1', true);
+    await service.setGithubAccount('ssh-1', 'gh-1234');
+
+    const [row] = await fixture.db
+      .select()
+      .from(sshConnections)
+      .where(eq(sshConnections.id, 'ssh-1'));
+    expect(row?.metadata?.syncLocalSettings).toBe(true);
+    expect(row?.metadata?.githubAccountId).toBe('gh-1234');
+  });
+
+  it('setGithubAccount rejects unknown machines', async () => {
+    await expect(service.setGithubAccount('missing', 'gh-1234')).rejects.toThrow(
+      'SSH connection missing not found'
+    );
+  });
+
+  it('getGithubAccountContext reads back who the host is and what it stores', async () => {
+    await insertSshConnection(fixture.db);
+    expect(await service.getGithubAccountContext('unknown')).toBeUndefined();
+
+    const before = await service.getGithubAccountContext('ssh-1');
+    expect(before?.storedAccountId).toBeUndefined();
+    expect(before?.username).toBe('jona');
+
+    await service.setGithubAccount('ssh-1', 'gh-1234');
+    const after = await service.getGithubAccountContext('ssh-1');
+    expect(after?.storedAccountId).toBe('gh-1234');
+  });
+
+  it('saveMachine preserves the GitHub account lock stored in metadata', async () => {
+    await insertSshConnection(fixture.db);
+    await service.setGithubAccount('ssh-1', 'gh-1234');
+
+    const saved = await service.saveMachine({
+      id: 'ssh-1',
+      name: 'Existing SSH',
+      host: 'example.org',
+      port: 22,
+      username: 'jona',
+      authType: 'agent',
+      useAgent: true,
+    });
+    expect(saved.githubAccountId).toBe('gh-1234');
+
+    const machines = await service.getMachines();
+    expect(machines.find((machine) => machine.id === 'ssh-1')?.githubAccountId).toBe('gh-1234');
+  });
+
   it('saveMachine preserves the sync toggle stored in metadata', async () => {
     await insertSshConnection(fixture.db);
     await service.setSyncLocalSettings('ssh-1', true);

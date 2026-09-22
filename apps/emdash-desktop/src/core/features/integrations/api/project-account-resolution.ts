@@ -7,7 +7,9 @@ import type { StoredIntegrationAccounts } from '@core/primitives/project-setting
 import {
   providerAccountContextKey,
   providerAccountHostMatching,
+  resolveHostLockedAccount,
   resolveProviderAccount,
+  type HostAccountLock,
   type ProviderAccountResolutionSnapshot,
 } from '@core/primitives/project-settings/api/resolve-provider-account';
 import type { ProviderAccountSummary } from '@core/primitives/provider-accounts/api';
@@ -26,10 +28,18 @@ export function resolveProjectAccount<Account extends ProviderAccountSummary>(op
   providerId: string;
   stored: StoredIntegrationAccounts;
   accounts: Account[];
+  /**
+   * Set when the project runs on a machine that claims the account for every
+   * project on it. Present pre-empts the per-project choice entirely.
+   */
+  hostAccountLock?: HostAccountLock;
   repository?: { kind: 'url'; url: string } | ({ kind: 'project' } & ProjectAccountRepositoryFacts);
 }): ProviderAccountResolutionSnapshot<Account> {
-  const { accounts, repository } = options;
+  const { accounts, repository, hostAccountLock } = options;
   const choice = options.stored[options.providerId];
+  // A machine sets an account for one provider; other providers on that
+  // machine keep their own policy rather than being failed closed by it.
+  const lock = hostAccountLock?.providerId === options.providerId ? hostAccountLock : undefined;
   let host: string | null = null;
   if (repository?.kind === 'url') {
     host = parseRepositoryRef(repository.url)?.host ?? null;
@@ -40,12 +50,14 @@ export function resolveProjectAccount<Account extends ProviderAccountSummary>(op
     host = facts.remotes.find((remote) => remote.name === baseRemote)?.host ?? null;
   }
   return {
-    ...resolveProviderAccount(
-      choice,
-      accounts,
-      repository ? providerAccountHostMatching(host) : undefined
-    ),
+    ...(lock
+      ? resolveHostLockedAccount(accounts, lock)
+      : resolveProviderAccount(
+          choice,
+          accounts,
+          repository ? providerAccountHostMatching(host) : undefined
+        )),
     accounts,
-    contextKey: providerAccountContextKey(choice, accounts),
+    contextKey: providerAccountContextKey(choice, accounts, lock),
   };
 }

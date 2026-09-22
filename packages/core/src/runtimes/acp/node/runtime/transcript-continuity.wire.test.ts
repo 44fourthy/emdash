@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { acpApiContract, type StopReason, type TranscriptTurn } from '#runtimes/acp/api';
 import { makeAcpHarness, makeStartInput } from '#runtimes/acp/node/acp-test-support';
 import { createAcpController } from '#runtimes/acp/node/api/controller';
+import { SessionCell } from '#runtimes/acp/node/session/cell';
 import { AcpRuntime } from './runtime';
 
 async function createHarness() {
@@ -297,6 +298,21 @@ describe('completed history through real runtime and Wire', () => {
       expect(new Set(all.map((turn) => turn.id)).size).toBe(7);
     }
   );
+
+  it('clones only the selected history page instead of the full transcript export', async () => {
+    h = await createHarness();
+    for (let index = 0; index < 5; index++) {
+      await h.send(`turn ${index}`);
+      await vi.waitFor(async () => expect((await h.history()).turns).toHaveLength(index + 1));
+    }
+    const fullHistory = vi.spyOn(SessionCell.prototype, 'history');
+
+    const page = await h.history(undefined, 2);
+
+    expect(page.turns.map((turn) => messageTexts(turn)[0])).toEqual(['turn 3', 'turn 4']);
+    expect(fullHistory).not.toHaveBeenCalled();
+    fullHistory.mockRestore();
+  });
 
   it.each([false, true])(
     'waits for the original prompt to settle before dispatching after cancel, cancellation rejected: %s',

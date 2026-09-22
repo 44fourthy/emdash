@@ -1,11 +1,26 @@
 import { createScope } from '@emdash/shared/concurrency';
 import { when } from 'mobx';
 import { useEffect } from 'react';
+import { getConversationsForTask } from '@core/features/conversations/api/browser/conversation-selectors';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
 import { getUpdateStore } from '@core/features/updates/contributions/app-stores';
+import type { TaskComposition } from '@core/features/workbench/api/browser/task-composition';
 import { getTaskComposition } from '@core/features/workbench/api/browser/task-composition-selectors';
+import type { ConversationType } from '@core/primitives/conversations/api';
 import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
 import { registerNotificationOpenHandler } from '@core/primitives/notifications/browser/open-handlers';
+
+export function openNotificationConversationTab(
+  paneLayout: TaskComposition['paneLayout'],
+  conversationId: string,
+  type: ConversationType | undefined
+): void {
+  paneLayout.open(
+    type === 'acp' ? 'acp-chat' : 'conversation',
+    { conversationId },
+    { preview: false }
+  );
+}
 
 export function useRegisterNotificationOpenHandlers(): void {
   const { navigate } = useNavigate();
@@ -21,12 +36,19 @@ export function useRegisterNotificationOpenHandlers(): void {
         if (!conversationId) return;
 
         const dispose = when(
-          () => !!getTaskComposition(target.projectId, target.taskId),
+          () =>
+            !!getTaskComposition(target.projectId, target.taskId) &&
+            !!getConversationsForTask(target.taskId)?.conversations.get(conversationId),
           () => {
-            getTaskComposition(target.projectId, target.taskId)?.paneLayout.open(
-              'conversation',
-              { conversationId },
-              { preview: false }
+            const composition = getTaskComposition(target.projectId, target.taskId);
+            const conversation = getConversationsForTask(target.taskId)?.conversations.get(
+              conversationId
+            );
+            if (!composition || !conversation) return;
+            openNotificationConversationTab(
+              composition.paneLayout,
+              conversationId,
+              conversation.data.type
             );
           },
           { timeout: 10_000 }

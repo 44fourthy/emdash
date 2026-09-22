@@ -157,3 +157,122 @@ describe.each(['github', 'gitlab', 'forgejo'])('project account policy for %s', 
     });
   });
 });
+
+describe('host account lock', () => {
+  function account(
+    accountId: string,
+    overrides: Partial<ProviderAccountSummary> = {}
+  ): ProviderAccountSummary {
+    return {
+      providerId: 'github',
+      displayName: accountId,
+      accountId,
+      host: 'github.com',
+      isDefault: false,
+      ...overrides,
+    };
+  }
+
+  function resolve(options: {
+    accounts: ProviderAccountSummary[];
+    stored?: StoredBaseProjectSettings;
+    /** Provider defaults to github, which is what the fork's policy pins. */
+    hostAccountLock?: { accountId: string | null; providerId?: string; pinnedLogin?: string };
+  }) {
+    return resolveProjectAccount({
+      providerId: 'github',
+      stored: options.stored?.integrationAccounts ?? {},
+      accounts: options.accounts,
+      hostAccountLock: options.hostAccountLock
+        ? { providerId: 'github', ...options.hostAccountLock }
+        : undefined,
+      repository: {
+        kind: 'project',
+        storedGitSettings: options.stored ?? {},
+        repoFacts: facts({ remotes: [remote('origin')] }),
+      },
+    });
+  }
+
+  it('resolves to the host account regardless of what the project stored', () => {
+    const hostAccount = account('a2');
+    const result = resolve({
+      accounts: [account('a1', { isDefault: true }), hostAccount],
+      stored: { integrationAccounts: { github: { kind: 'account', accountId: 'a1' } } },
+      hostAccountLock: { accountId: 'a2' },
+    });
+    expect(result).toMatchObject({
+      value: hostAccount,
+      provenance: { kind: 'inferred', from: 'host account' },
+    });
+  });
+
+  it('overrides an explicit none on the project', () => {
+    // The host claims the account; a project-level "no account" cannot opt out
+    // of the machine's identity, which is what is actually authenticating.
+    const hostAccount = account('a2');
+    const result = resolve({
+      accounts: [hostAccount],
+      stored: { integrationAccounts: { github: { kind: 'none' } } },
+      hostAccountLock: { accountId: 'a2' },
+    });
+    expect(result).toMatchObject({ value: hostAccount });
+  });
+
+  it('fails closed when the locked account is no longer connected', () => {
+    const result = resolve({
+      accounts: [account('a1', { isDefault: true })],
+      hostAccountLock: { accountId: 'gone' },
+    });
+    expect(result).toMatchObject({ value: null, provenance: { kind: 'unresolvable' } });
+  });
+
+  it('resolves to nothing when the host has no account set', () => {
+    const result = resolve({
+      accounts: [account('a1', { isDefault: true })],
+      hostAccountLock: { accountId: null },
+    });
+    expect(result).toMatchObject({
+      value: null,
+      provenance: { kind: 'inferred', from: 'no host account' },
+    });
+  });
+
+  it('leaves local projects on the per-project policy when there is no lock', () => {
+    const preferred = account('a1', { isDefault: true });
+    const result = resolve({
+      accounts: [preferred],
+      stored: { integrationAccounts: { github: { kind: 'account', accountId: 'a1' } } },
+    });
+    expect(result).toMatchObject({ value: preferred, provenance: { kind: 'set' } });
+  });
+
+  it('keys the context on the lock, so changing it invalidates account-bound work', () => {
+    const accounts = [account('a1'), account('a2')];
+    const locked = resolve({ accounts, hostAccountLock: { accountId: 'a1' } });
+    const relocked = resolve({ accounts, hostAccountLock: { accountId: 'a2' } });
+    const unlocked = resolve({ accounts });
+    expect(locked.contextKey).not.toBe(relocked.contextKey);
+    expect(locked.contextKey).not.toBe(unlocked.contextKey);
+  });
+
+  it('leaves other providers on their own policy', () => {
+    // A machine's account belongs to GitHub. GitLab on the same machine must
+    // keep its own resolution rather than be failed closed by a lock that
+    // names an account it has never heard of.
+    const gitlab: ProviderAccountSummary = { ...account('g1'), providerId: 'gitlab' };
+    const result = resolveProjectAccount({
+      providerId: 'gitlab',
+      stored: {},
+      accounts: [gitlab],
+      hostAccountLock: { accountId: 'a1', providerId: 'github' },
+      repository: {
+        kind: 'project',
+        storedGitSettings: {},
+        repoFacts: facts({ remotes: [remote('origin')] }),
+      },
+    });
+    expect(result).toMatchObject({ value: gitlab });
+    expect(result.provenance.kind).not.toBe('unresolvable');
+  });
+});

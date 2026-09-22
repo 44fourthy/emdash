@@ -22,7 +22,7 @@
  */
 
 import type { Virtualizer } from '@core/virtualizer';
-import { createRoot, createSignal } from 'solid-js';
+import { createRoot, createSignal, untrack } from 'solid-js';
 import type { Accessor, Setter } from 'solid-js';
 import { collapseAnimationDefaults } from './create-height-tween';
 
@@ -90,8 +90,10 @@ export type TweenRegistry = {
   set(itemId: string, getIndex: () => number, target: number, shouldAnim: boolean): TweenHandle;
   /**
    * Called by UnitRow's onCleanup to remove the entry when the row unmounts.
+   * The owner accessor prevents a stale row cleanup from deleting an entry
+   * already adopted by the same item at a new virtual index.
    */
-  unregister(itemId: string): void;
+  unregister(itemId: string, getIndex: () => number): void;
   /**
    * Advance all active tweens by one frame. Call from the scheduler's animate
    * phase. Returns true while any entry is still mid-tween (keeps scheduler awake).
@@ -188,13 +190,21 @@ export function createTweenRegistry(
     // Existing entry: update getIndex in case the row shifted due to prepend/re-flatten.
     existing.getIndex = getIndex;
 
+    // Structural edits reset the virtualizer with estimates before surviving
+    // rows register at their new indices. Restore the row's current (possibly
+    // mid-tween) height even when its logical target did not change.
+    const currentH = untrack(existing.height);
+    const currentIndex = getIndex();
+    const restoreDelta = virt.setSize(currentIndex, currentH);
+    if (restoreDelta !== 0) onHeightChanged(currentIndex, restoreDelta);
+
     if (target === existing.to) {
-      // Target unchanged — no work needed.
+      // Target unchanged — the current height was still restored above because
+      // this row may now occupy a freshly reseeded virtual index.
       return makeHandle(existing);
     }
 
     // Target changed. Decide snap vs. animate.
-    const currentH = existing.height();
     const noMotion = reducedMotionCache || !shouldAnim;
 
     if (noMotion || currentH === target) {
@@ -221,9 +231,9 @@ export function createTweenRegistry(
     return makeHandle(existing);
   };
 
-  const unregister = (itemId: string) => {
+  const unregister = (itemId: string, getIndex: () => number) => {
     const entry = entries.get(itemId);
-    if (entry) {
+    if (entry?.getIndex === getIndex) {
       entry.disposeOwner();
       entries.delete(itemId);
     }

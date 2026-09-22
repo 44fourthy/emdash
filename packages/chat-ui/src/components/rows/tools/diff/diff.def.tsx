@@ -74,7 +74,9 @@ function diffBodyH(previewRows: DiffRow[], codeLineH: number, border: number): n
 }
 
 function diffUnitH(item: ChatDiff, ctx: MeasureCtx, vars: DiffVars): number {
-  if (item.status === 'running' && item.newText.length === 0) return vars.headerH;
+  if (!ctx.expanded(item.id) || (item.status === 'running' && item.newText.length === 0)) {
+    return vars.headerH;
+  }
   const codeLineH = ctx.theme.fonts.code.lineHeight;
   const rows = ctx.caches.computeDiff(item.oldText, item.newText);
   const previewRows = selectPreview(rows, vars.maxLines, vars.context);
@@ -85,6 +87,8 @@ function diffUnitH(item: ChatDiff, ctx: MeasureCtx, vars: DiffVars): number {
 
 function DiffUnitRender(props: { data: ChatDiff; ctx: RenderCtx; vars: DiffVars }) {
   const mCtx = () => props.ctx.measureCtx?.();
+  // Inverted semantics: stored "collapsed" bool = "expanded".
+  const isExpanded = () => props.ctx.viewState.isCollapsed(props.data.id);
 
   const layout = createMemo<DiffLayout | null>(() => {
     const ctx = mCtx();
@@ -104,7 +108,8 @@ function DiffUnitRender(props: { data: ChatDiff; ctx: RenderCtx; vars: DiffVars 
     return diffUnitH(props.data, ctx, props.vars);
   });
 
-  const headerOnly = () => props.data.status === 'running' && props.data.newText.length === 0;
+  const hasDiff = () => !(props.data.status === 'running' && props.data.newText.length === 0);
+  const showBody = () => isExpanded() && hasDiff();
   const codeLineH = () => mCtx()?.theme.fonts.code.lineHeight ?? 0;
 
   const styleVars = (): DiffStyleVars => ({ height: totalH(), headerH: props.vars.headerH });
@@ -119,9 +124,10 @@ function DiffUnitRender(props: { data: ChatDiff; ctx: RenderCtx; vars: DiffVars 
               adds={l().adds}
               dels={l().dels}
               headerH={props.vars.headerH}
-              hasBody={!headerOnly()}
+              expanded={isExpanded()}
+              hasBody={showBody()}
             />
-            <Show when={!headerOnly()}>
+            <Show when={showBody()}>
               <DiffLines item={props.data} layout={l()} codeLineHeight={codeLineH} />
             </Show>
           </>
@@ -137,9 +143,14 @@ export const diffUnitDef = defineUnit<ChatDiff, DiffVars>({
   kind: 'diff',
   margin: { top: 2, bottom: 6 },
   vars: DIFF_VARS,
+  // The header and body own separate border edges, so snap rather than clip a
+  // tween through the body and temporarily lose its rounded lower border.
+  collapseIds: () => [],
 
   estimate(item, ctx, vars): number {
-    if (item.status === 'running' && item.newText.length === 0) return vars.headerH;
+    if (!ctx.expanded(item.id) || (item.status === 'running' && item.newText.length === 0)) {
+      return vars.headerH;
+    }
     return vars.headerH + vars.maxLines * ctx.theme.fonts.code.lineHeight + 2 * vars.border;
   },
 

@@ -9,18 +9,26 @@
  *                               for use from ChatCaches.clearTextMeasure).
  */
 
+import type { FontConfig, VariantMetrics } from '../config';
+
 export { clearCache as clearPretextInternalCaches } from '@chenglou/pretext';
 
-/**
- * Named font faces to pre-load.  These must exactly match the font-family names
- * used in metrics.ts so `document.fonts.load()` resolves them correctly.
- */
-const FONT_LOAD_SPECS = [
-  '400 14px "Inter Variable"',
-  '600 14px "Inter Variable"',
-  '400 13px "JetBrains Mono Variable"',
-  '400 12px "JetBrains Mono Variable"',
-];
+function fontLoadSpecs(fonts: FontConfig): string[] {
+  const variants: VariantMetrics[] = [
+    fonts.body,
+    fonts.bold,
+    fonts.italic,
+    fonts.boldItalic,
+    fonts.link,
+    fonts.h1,
+    fonts.h2,
+    fonts.h3,
+    fonts.inlineCode,
+    fonts.mention,
+    fonts.code,
+  ];
+  return [...new Set(variants.map((variant) => variant.font))];
+}
 
 /**
  * Eagerly load the bundled named fonts, then call `onCleared`
@@ -33,9 +41,9 @@ const FONT_LOAD_SPECS = [
  *
  * Call this once when ChatTranscript mounts.
  */
-export function registerFontsReadyClear(onCleared?: () => void): void {
+export function registerFontsReadyClear(fonts: FontConfig, onCleared?: () => void): void {
   if (typeof document === 'undefined') return;
-  void Promise.all(FONT_LOAD_SPECS.map((spec) => document.fonts.load(spec))).then(() => {
+  void Promise.all(fontLoadSpecs(fonts).map((spec) => document.fonts.load(spec))).then(() => {
     onCleared?.();
   });
 }

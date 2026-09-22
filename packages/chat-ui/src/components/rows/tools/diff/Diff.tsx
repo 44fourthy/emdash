@@ -15,7 +15,11 @@ import {
   diffBodyCard,
   diffCardVars,
   diffDelsCount,
+  diffDisclosureButton,
   diffErrorIcon,
+  diffChevron,
+  diffChevronExpanded,
+  diffFileButton,
   diffFileName,
   diffHeader,
   diffLineContent,
@@ -40,6 +44,8 @@ export type DiffHeaderProps = {
    * (`rounded-t`), standalone it owns the full rounded card border.
    */
   hasBody: boolean;
+  /** Whether the disclosure is currently expanded. */
+  expanded: boolean;
 };
 
 export function DiffHeader(props: DiffHeaderProps) {
@@ -48,10 +54,11 @@ export function DiffHeader(props: DiffHeaderProps) {
   const running = () => props.item.status === 'running' && !props.item.awaitingPermission;
   // Stats are meaningless until a diff body exists; hide them while streaming
   // the header alone or when there are genuinely no changes.
-  const showStats = () => props.hasBody && (props.adds > 0 || props.dels > 0);
+  const showStats = () => props.adds > 0 || props.dels > 0;
   const commands = useCommands();
 
-  const handleClick = () => {
+  const handleOpenFile = (event: MouseEvent) => {
+    event.stopPropagation();
     commands().onOpenFile?.({ path: props.item.path, itemId: props.item.id, source: 'diff' });
   };
 
@@ -59,9 +66,14 @@ export function DiffHeader(props: DiffHeaderProps) {
     <div
       class={diffHeader({ hasBody: props.hasBody })}
       style={assignInlineVars({ [diffCardVars.headerH]: `${props.headerH}px` })}
-      role="button"
-      onClick={handleClick}
     >
+      <button
+        type="button"
+        class={diffDisclosureButton}
+        aria-label={`${props.expanded ? 'Collapse' : 'Expand'} ${name()} changes`}
+        aria-expanded={props.expanded ? 'true' : 'false'}
+        data-collapse-id={props.item.id}
+      />
       {iconClass() ? (
         <i
           class={`${iconClass()} shrink-0`}
@@ -71,14 +83,29 @@ export function DiffHeader(props: DiffHeaderProps) {
       ) : (
         <GenericFileIcon />
       )}
-      <span class={diffFileName} classList={{ [textShimmer]: running() }} title={props.item.path}>
-        {name()}
+      <span classList={{ [textShimmer]: running() }}>
+        {props.item.oldText === null ? 'Created' : 'Edited'}
       </span>
+      <button
+        type="button"
+        class={`${diffFileButton} ${diffFileName}`}
+        title={props.item.path}
+        on:click={handleOpenFile}
+      >
+        {name()}
+      </button>
       <Show when={showStats()}>
         <span class={diffAddsCount}>+{props.adds}</span>
         <span class={diffDelsCount}>−{props.dels}</span>
       </Show>
       <span class={diffSpacer} />
+      <span
+        class={diffChevron}
+        classList={{ [diffChevronExpanded]: props.expanded }}
+        aria-hidden="true"
+      >
+        ›
+      </span>
       <Show
         when={props.item.awaitingPermission}
         fallback={
@@ -212,6 +239,7 @@ export function Diff(props: DiffProps) {
         dels={props.layout.dels}
         headerH={32}
         hasBody
+        expanded
       />
       <DiffLines item={props.item} layout={props.layout} codeLineHeight={props.codeLineHeight} />
     </div>

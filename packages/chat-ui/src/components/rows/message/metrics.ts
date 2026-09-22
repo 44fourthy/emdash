@@ -2,6 +2,7 @@ export type MessageVars = {
   cardBorder: number;
   collapsedMaxH: number;
   expandedMaxH: number;
+  userCardMinW: number;
   userCardPadX: number;
   userCardPadY: number;
   attachThumb: number;

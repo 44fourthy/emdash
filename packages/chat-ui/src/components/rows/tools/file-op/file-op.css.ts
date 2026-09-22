@@ -57,8 +57,16 @@ export const fileOpHeader = style({
   },
 });
 
-export const monoRunning = style({
-  fontFamily: 'monospace',
+export const fileOpLeadingIcon = style({
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  flexShrink: 0,
+  opacity: 0.8,
+});
+
+export const runningLabel = style({
+  fontFamily: vars.typeBodyFontFamily,
   fontSize: vars.typeBodyFontSize,
   color: vars.fgPassive,
 });

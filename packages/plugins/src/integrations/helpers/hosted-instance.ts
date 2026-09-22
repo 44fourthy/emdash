@@ -1,4 +1,5 @@
 import { err, ok, type Result } from '@emdash/shared';
+import { normalizeForgeHost } from '@emdash/shared/util';
 import type { IntegrationError } from '../types';
 
 const NETWORK_ERROR_CODES = new Set(['ENOTFOUND', 'ECONNREFUSED', 'ETIMEDOUT', 'EAI_AGAIN']);
@@ -45,7 +46,7 @@ export function checkRemoteHostMatchesInstance(
     });
   }
 
-  if (remoteHost !== instanceHost) {
+  if (normalizeForgeHost(remoteHost) !== normalizeForgeHost(instanceHost)) {
     return err({
       type: 'unsupported_host',
       message: `Git remote host "${remoteHost}" does not match configured ${providerName} instance "${instanceHost}".`,

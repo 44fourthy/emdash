@@ -1,10 +1,12 @@
 import type { JSX } from 'solid-js';
 import { Show } from 'solid-js';
+import type { CollapsibleCardAppearance } from './CollapsibleCard';
 import { IconError, IconShieldAlert } from './icons';
 import {
   cardChevronExpanded,
   cardErrorIcon,
   cardHeader,
+  cardHeaderActivity,
   cardHeaderLeft,
   cardHeaderRight,
   cardHeaderTitle,
@@ -24,6 +26,8 @@ export type CardHeaderProps = {
   expanded: boolean;
   /** Whether to draw the separator between the header and body. */
   bodyVisible: boolean;
+  /** Visual treatment inherited from the containing card. */
+  appearance?: CollapsibleCardAppearance;
   /** Leading icon shown until the header row is hovered. */
   icon: JSX.Element;
   /** Header label content. */
@@ -47,7 +51,7 @@ export function CardHeader(props: CardHeaderProps) {
   return (
     <button
       type="button"
-      class={cardHeader}
+      class={`${cardHeader} ${props.appearance === 'activity' ? cardHeaderActivity : ''}`}
       style={{ height: `${props.height}px` }}
       aria-expanded={props.expanded ? 'true' : 'false'}
       data-collapse-id={props.id}

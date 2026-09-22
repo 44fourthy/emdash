@@ -60,4 +60,10 @@ describe('checkRemoteHostMatchesInstance', () => {
       },
     });
   });
+
+  it('accepts an aliased github.com remote against a configured github.com', () => {
+    expect(
+      checkRemoteHostMatchesInstance('github.com-rc3r0', 'https://github.com', 'GitHub')
+    ).toEqual({ success: true, data: undefined });
+  });
 });

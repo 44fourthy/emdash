@@ -258,6 +258,8 @@ export type ChatRootProps = {
    * transcript while scrolling. Defaults to false.
    */
   pinUserMessages?: boolean;
+  /** Group all non-final turn activity behind one OpenDesign-style disclosure. */
+  groupTurnActivity?: boolean;
   /**
    * Controls whether ChatRoot renders an internal composer slot.
    * - `'slot'`: render a sticky bottom slot; internal ResizeObserver drives padBottom.
@@ -340,6 +342,16 @@ export function ChatRoot(props: ChatRootProps) {
   const viewState = () => state().viewState;
   const expandedUserId = () => state().expandedUserId.get();
   const setExpandedUserId = (id: string | null) => state().expandedUserId.set(id);
+  const [structureVersion, setStructureVersion] = createSignal(0);
+
+  const isExecutionGroupToggle = (id: string) => id.endsWith(':execution');
+
+  const toggleCollapsed = (id: string): void => {
+    viewState().toggleCollapsed(id);
+    if (props.groupTurnActivity && isExecutionGroupToggle(id)) {
+      setStructureVersion((version) => version + 1);
+    }
+  };
 
   let scrollEl: HTMLDivElement | undefined;
   let canvasEl: HTMLDivElement | undefined;
@@ -483,10 +495,15 @@ export function ChatRoot(props: ChatRootProps) {
   const maxScrollTop = () => Math.max(0, contentH() - viewHeight());
 
   // ── Flat unit view (two-tier, incremental) ────────────────────────────────
-  const segmentCtx = (active = false) => ({
+  const segmentCtx = (active = false, activeTurnId?: string) => ({
     caches: caches(),
-    expanded: (_id: string) => false,
+    // Structural disclosure changes have their own explicit invalidation
+    // signal. Read state untracked here so incremental committed appends never
+    // accidentally unsubscribe older group ids.
+    expanded: (id: string) => untrack(() => viewState().isCollapsed(id)),
     active,
+    groupTurnActivity: props.groupTurnActivity,
+    activeTurnId,
     plan: () => state().session.state.plan,
     pendingToolCallIds: () => state().session.state.pendingToolCallIds,
     terminalOutput: (terminalId: string) => state().session.state.terminalOutput(terminalId),
@@ -502,6 +519,7 @@ export function ChatRoot(props: ChatRootProps) {
   // Identity of the model this effect last built from. A change signals a
   // view.setModel swap and drives the snapshot + incremental-cache reset.
   let lastState: ChatState | undefined;
+  let lastStructureVersion = -1;
   const [committedUnitsVersion, setCommittedUnitsVersion] = createSignal(0);
   // Stable empty array passed to makeUnitsView when we need a committed-only
   // view. Must not change identity so memos don't re-run on each access.
@@ -521,6 +539,8 @@ export function ChatRoot(props: ChatRootProps) {
   createEffect(() => {
     const s = state();
     const next = s.transcript.state.displayTurns;
+    const nextStructureVersion = structureVersion();
+    const structureChanged = nextStructureVersion !== lastStructureVersion;
 
     if (s !== lastState) {
       // Model swap: snapshot the outgoing model's heights while committedUnitsArr
@@ -537,6 +557,7 @@ export function ChatRoot(props: ChatRootProps) {
     const ctx = segmentCtx(false);
 
     if (
+      !structureChanged &&
       next.length > prev.length &&
       (prev.length === 0 || next[prev.length - 1] === prev[prev.length - 1])
     ) {
@@ -568,11 +589,13 @@ export function ChatRoot(props: ChatRootProps) {
     }
 
     lastCommitted = next;
+    lastStructureVersion = nextStructureVersion;
     setCommittedUnitsVersion((v) => v + 1);
   });
 
   const activeUnits = createMemo(() => {
     committedUnitsVersion();
+    structureVersion();
     const at = state().transcript.state.activeTurnSnapshot;
     const pendingPrompt = state().session.state.pendingPrompt;
     if ((!at || at.items.length === 0) && !pendingPrompt)
@@ -599,7 +622,7 @@ export function ChatRoot(props: ChatRootProps) {
         } satisfies TranscriptTurn)
       : null;
     const turns = [...(at ? [at] : []), ...(pendingTurn ? [pendingTurn] : [])];
-    return flattenTier(turns, segmentCtx(true), SEGMENTERS, UNIT_REGISTRY, prevKind);
+    return flattenTier(turns, segmentCtx(true, at?.id), SEGMENTERS, UNIT_REGISTRY, prevKind);
   });
 
   const units = createMemo<UnitsView>(() => {
@@ -627,9 +650,10 @@ export function ChatRoot(props: ChatRootProps) {
   // of one per measured row (the layout-thrash regression fix).
   let needsProject = false;
 
-  // appliedTop: tracks the last translateY written for each row element.
-  // commit() skips the DOM write when the value hasn't changed.
-  const appliedTop = new Map<number, number>();
+  // appliedTop: tracks the last translateY written to each concrete row element.
+  // Rows can be replaced at the same numeric index during structural edits, so
+  // keying this by element prevents a stale row from suppressing the new write.
+  const appliedTop = new WeakMap<HTMLDivElement, number>();
 
   // lastLayout: previous LayoutSnapshot so commit() can diff field-by-field.
   let lastLayout: LayoutSnapshot | null = null;
@@ -639,10 +663,27 @@ export function ChatRoot(props: ChatRootProps) {
   let lastVisibleStart = 0;
   let lastVisibleEnd = -1;
 
+  // Rows normally append at the tail, so Virtualizer.setCount can preserve
+  // measured sizes by index. Expanding a turn group inserts rows in the middle;
+  // detect that rare identity change and reseed by stable unit id instead.
+  let virtualUnitIds: string[] = [];
+  let virtualActiveUnitIds: string[] = [];
+  let virtualModel: ChatState | undefined;
+  let virtualCommittedVersion = -1;
+  let virtualStructureVersion = -1;
+  const structuralHeightCache = new Map<string, number>();
+
   // ── Count sync effect ─────────────────────────────────────────────────────
   createEffect(() => {
     const us = units();
+    const active = activeUnits();
     const t = theme();
+    const nextCommittedVersion = committedUnitsVersion();
+    const nextStructureVersion = structureVersion();
+    // The active tier stays small. Comparing only its ids keeps ordinary text
+    // streaming O(active) while still detecting same-count structural swaps
+    // such as a thinking row becoming a thinking group.
+    const nextActiveUnitIds = active.map((unit) => unit.id);
     untrack(() => {
       const estimateCtx = {
         theme: t,
@@ -656,10 +697,40 @@ export function ChatRoot(props: ChatRootProps) {
       // lastWidth > 0 iff onCleanup wrote a snapshot on a prior dispose.
       // Skip the Map.get pass entirely on cold mounts (empty heightmap).
       const currentState = state();
+      const modelChanged = currentState !== virtualModel;
+      if (modelChanged) structuralHeightCache.clear();
+
+      const activeStructureChanged =
+        nextActiveUnitIds.length !== virtualActiveUnitIds.length ||
+        nextActiveUnitIds.some((id, index) => id !== virtualActiveUnitIds[index]);
+      const reconcileIds =
+        modelChanged ||
+        us.length !== virt.count ||
+        nextCommittedVersion !== virtualCommittedVersion ||
+        nextStructureVersion !== virtualStructureVersion ||
+        activeStructureChanged;
+
+      if (!reconcileIds) return;
+
+      const nextUnitIds = Array.from({ length: us.length }, (_, index) => us.at(index)?.id ?? '');
+      const appendOnly =
+        !modelChanged &&
+        nextUnitIds.length >= virtualUnitIds.length &&
+        virtualUnitIds.every((id, index) => nextUnitIds[index] === id);
+
+      if (!appendOnly && !modelChanged) {
+        for (let index = 0; index < virtualUnitIds.length; index++) {
+          const id = virtualUnitIds[index];
+          if (id) structuralHeightCache.set(id, virt.size(index));
+        }
+      }
+
       const hasHeightmapSnapshot = currentState.heightmap.lastWidth > 0;
-      virt.setCount(us.length, (i) => {
+      const estimateUnit = (i: number): number => {
         const u = us.at(i);
         if (!u) return 60;
+        const retained = structuralHeightCache.get(u.id);
+        if (retained !== undefined) return retained;
         // Use the persisted measured height if available (avoids scrollbar drift
         // on remount). Falls back to the cheap estimate for rows never measured
         // or when the heightmap was seeded at a different container width
@@ -673,7 +744,16 @@ export function ChatRoot(props: ChatRootProps) {
           unitDef?.estimate?.(u.data, estimateCtx, unitDef.vars ?? {}) ??
           genericEstimate(u.data as unknown as ChatItem, estimateCtx);
         return unitReservedHeight(u, contentH);
-      });
+      };
+
+      if (appendOnly) virt.setCount(us.length, estimateUnit);
+      else virt.resetCount(us.length, estimateUnit);
+
+      virtualUnitIds = nextUnitIds;
+      virtualActiveUnitIds = nextActiveUnitIds;
+      virtualModel = currentState;
+      virtualCommittedVersion = nextCommittedVersion;
+      virtualStructureVersion = nextStructureVersion;
       refreshTotal();
       // Defer projection to the write phase: projectAnchor will fire once per
       // frame (not once per row) preventing layout thrashing on streaming updates.
@@ -918,7 +998,14 @@ export function ChatRoot(props: ChatRootProps) {
     const active = untrack(activeUnits);
     const base = committedUnitsArr.length;
     for (let i = 0; i < active.length; i++) {
-      if (active[i]?.itemId === id) return base + i;
+      const unit = active[i];
+      if (unit?.itemId === id) return base + i;
+      if (
+        unit?.kind === 'execution-group' &&
+        (unit.data as { toggleId?: string }).toggleId === id
+      ) {
+        return base + i;
+      }
     }
     return -1;
   }
@@ -1104,10 +1191,10 @@ export function ChatRoot(props: ChatRootProps) {
     const pt = padTop();
     for (const idx of nextVisible) {
       const top = virt.top(idx) + pt;
-      if (appliedTop.get(idx) !== top) {
-        appliedTop.set(idx, top);
-        const el = rowEls.get(idx);
-        if (el) el.style.transform = `translateY(${top}px)`;
+      const el = rowEls.get(idx);
+      if (el && appliedTop.get(el) !== top) {
+        appliedTop.set(el, top);
+        el.style.transform = `translateY(${top}px)`;
       }
     }
 
@@ -1415,6 +1502,11 @@ export function ChatRoot(props: ChatRootProps) {
         genericEstimate(unit.data as unknown as ChatItem, loadEstimateCtx);
       return unitReservedHeight(unit, contentH);
     });
+    // Keep the id sequence aligned with Virtualizer.prepend before the reactive
+    // history update runs the count-sync effect. Otherwise that effect could
+    // associate old ids with the newly prepended estimates and poison the
+    // stable-id height cache.
+    virtualUnitIds = [...prependedUnits.map((unit) => unit.id), ...virtualUnitIds];
 
     state().transcript.history.prepend(turns);
     refreshTotal();
@@ -1480,7 +1572,7 @@ export function ChatRoot(props: ChatRootProps) {
       props.controls.scrollToBottom = doScrollToBottom;
       props.controls.scrollToItem = doScrollToItem;
       props.controls.loadOlder = doLoadOlder;
-      props.controls.toggleCollapsed = (id) => viewState().toggleCollapsed(id);
+      props.controls.toggleCollapsed = toggleCollapsed;
       props.controls.composerSlot = composerSlotEl ?? null;
       props.controls.heroSlot = heroSlotEl ?? null;
       props.controls.contentOverlay = contentOverlaySlotEl ?? null;
@@ -1554,16 +1646,17 @@ export function ChatRoot(props: ChatRootProps) {
       const collapseTarget = t.closest('[data-collapse-id]') as HTMLElement | null;
       if (collapseTarget?.dataset.collapseId) {
         const id = collapseTarget.dataset.collapseId;
+        const anchorItemId = id;
         // Pin the toggled row at its current viewport position before the height
         // change. With readPhase no longer reclassifying intent on idle frames,
         // this anchor is now guaranteed to survive the tween — fixing the scroll
         // jump on expand/collapse in short reserve-active transcripts.
-        const idx = unitIndexOf(id);
+        const idx = unitIndexOf(anchorItemId);
         if (idx >= 0 && scrollEl) {
           const offset = scrollEl.scrollTop - (virt.top(idx) + padTop());
-          setAnchor({ kind: 'anchor', itemId: id, edge: 'top', offset });
+          setAnchor({ kind: 'anchor', itemId: anchorItemId, edge: 'top', offset });
         }
-        viewState().toggleCollapsed(id);
+        toggleCollapsed(id);
         return;
       }
 
@@ -1688,16 +1781,20 @@ export function ChatRoot(props: ChatRootProps) {
                         };
 
                         return (
-                          <Show when={u()}>
+                          <Show when={u()?.id} keyed>
                             <div
                               class={unitRowWrapper}
                               ref={(el) => {
                                 rowEls.set(unitIndex, el);
                                 // Seed initial transform; commit() reconciles on each frame.
-                                el.style.transform = `translateY(${virt.top(unitIndex) + padTop()}px)`;
+                                const top = virt.top(unitIndex) + padTop();
+                                el.style.transform = `translateY(${top}px)`;
+                                appliedTop.set(el, top);
                                 onCleanup(() => {
-                                  rowEls.delete(unitIndex);
-                                  appliedTop.delete(unitIndex);
+                                  // A surviving unit may already have adopted this numeric
+                                  // slot. Never let the old row delete the new row's owner.
+                                  if (rowEls.get(unitIndex) === el) rowEls.delete(unitIndex);
+                                  appliedTop.delete(el);
                                 });
                               }}
                               data-index={String(unitIndex)}

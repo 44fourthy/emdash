@@ -1,6 +1,7 @@
 import { reaction } from 'mobx';
 import { browserDiagnosticsStore } from '@core/features/browser/api/browser/browser-diagnostics-store';
 import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
+import { visualInspectorStore } from '@core/features/browser/api/browser/visual-inspector-store';
 import type { BrowserSessionSnapshot } from '@core/primitives/browser/api';
 import type {
   TabEntry,
@@ -58,6 +59,7 @@ export class BrowserTabResource implements TabResource {
     this._unsubscribeOpenInNewTab();
     this._disposeSessionSync();
     browserDiagnosticsStore.clearBrowser(this.browserId);
+    visualInspectorStore.clearBrowser(this.browserId);
     browserSessionStore.removeSession(this.browserId);
     void getBrowserClient().then((client) =>
       client.unregisterSession({ browserId: this.browserId })

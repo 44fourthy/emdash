@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ChatMessage, TranscriptTurn } from '@/model';
 import { applyTurnEvent } from '@/stories/_harness/turn-reducer';
 import { createTranscript } from './transcript';
@@ -14,6 +14,14 @@ function turn(id: string, seq: number, ...items: ChatMessage[]): TranscriptTurn 
     initiator: items.some((item) => item.role === 'user') ? 'user' : 'agent',
     items: items as TranscriptTurn['items'],
   };
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+    for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
 }
 
 function drive(
@@ -128,6 +136,42 @@ describe('activeTurn', () => {
     expect((ref1 as ChatMessage).text).toBe('Hello world');
   });
 
+  it('owns frozen source snapshots without structured-cloning streaming text', () => {
+    const cloneSpy = vi.spyOn(globalThis, 'structuredClone');
+    try {
+      const tx = createTranscript();
+      const first = deepFreeze(
+        turn('active', 0, {
+          kind: 'message',
+          id: 'm1',
+          seq: 0,
+          role: 'assistant',
+          text: 'x'.repeat(1024 * 1024),
+        })
+      );
+      const second = deepFreeze(
+        turn('active', 0, {
+          kind: 'message',
+          id: 'm1',
+          seq: 0,
+          role: 'assistant',
+          text: `${(first.items[0] as ChatMessage).text}y`,
+        })
+      );
+
+      tx.activeTurn.set(first, 'generating');
+      tx.activeTurn.set(second, 'generating');
+
+      expect((tx.activeTurn.get()!.items[0] as ChatMessage).text).toBe(
+        (second.items[0] as ChatMessage).text
+      );
+      expect((first.items[0] as ChatMessage).text).toHaveLength(1024 * 1024);
+      expect(cloneSpy).not.toHaveBeenCalled();
+    } finally {
+      cloneSpy.mockRestore();
+    }
+  });
+
   it('commit moves the active turn into committed turns and clears active state', () => {
     const tx = createTranscript();
     drive(tx, { type: 'message_chunk', id: 'a1', role: 'assistant', text: 'hi' });
@@ -239,6 +283,98 @@ describe('versioned transcript reconciliation', () => {
     );
     expect(tx.state.committedTurns.map((turn) => turn.id)).toEqual(['old', 'recent', 'new']);
     expect(tx.findItemById('recent')).toMatchObject({ text: 'amended' });
+  });
+
+  it('keeps only the requested latest-page window and evicts old item lookups', () => {
+    const tx = createTranscript();
+    const turns = Array.from({ length: 5 }, (_, seq) =>
+      turn(`turn-${seq}`, seq, msg(`message-${seq}`))
+    );
+
+    expect(tx.applyLatestPage(page(turns, 1, 'one', 0), 2)).toBe(true);
+    expect(tx.state.committedTurns.map((entry) => entry.id)).toEqual(['turn-3', 'turn-4']);
+    expect(tx.findItemById('message-0')).toBeUndefined();
+    expect(tx.findItemById('message-4')).toBeDefined();
+  });
+
+  it('supports an empty latest-page window', () => {
+    const tx = createTranscript();
+    const turns = [turn('turn-0', 0, msg('message-0'))];
+
+    expect(tx.applyLatestPage(page(turns, 1, 'one', 0), 0)).toBe(true);
+    expect(tx.state.committedTurns).toEqual([]);
+    expect(tx.findItemById('message-0')).toBeUndefined();
+  });
+
+  it('preserves a live turn while replacing the bounded committed window', () => {
+    const tx = createTranscript();
+    tx.observe({
+      ...position(1, 4),
+      activeTurn: turn('turn-5', 5, msg('message-5')),
+    });
+
+    expect(
+      tx.applyLatestPage(
+        page(
+          [turn('turn-3', 3, msg('message-3')), turn('turn-4', 4, msg('message-4'))],
+          1,
+          'one',
+          3
+        ),
+        2
+      )
+    ).toBe(true);
+    expect(tx.state.committedTurns.map((entry) => entry.id)).toEqual(['turn-3', 'turn-4']);
+    expect(tx.state.activeTurnSnapshot?.id).toBe('turn-5');
+  });
+
+  it('drops retained turns that the bounded latest page proves are committed', () => {
+    const tx = createTranscript();
+    tx.observe({
+      ...position(0, null),
+      activeTurn: turn('turn-0', 0, msg('message-0')),
+    });
+    tx.observe({
+      ...position(206, 205),
+      activeTurn: turn('turn-206', 206, msg('message-206')),
+    });
+    const latest = Array.from({ length: 100 }, (_, index) => {
+      const seq = index + 106;
+      return turn(`turn-${seq}`, seq, msg(`message-${seq}`));
+    });
+
+    expect(tx.applyLatestPage(page(latest, 206, 'one', 106), 100)).toBe(true);
+    expect(tx.state.displayTurns.some((entry) => entry.id === 'turn-0')).toBe(false);
+    expect(tx.state.committedTurns).toHaveLength(100);
+    expect(tx.state.activeTurnSnapshot?.id).toBe('turn-206');
+  });
+
+  it('bounds retained turns using the latest committed seq from a legacy page', () => {
+    const tx = createTranscript();
+    tx.activeTurn.set(turn('turn-0', 0, msg('message-0')), 'generating');
+    tx.activeTurn.set(turn('turn-2', 2, msg('message-2')), 'generating');
+
+    expect(
+      tx.applyLatestPage(
+        {
+          turns: [turn('turn-1', 1, msg('message-1'))],
+          nextCursor: null,
+        },
+        100
+      )
+    ).toBe(true);
+    expect(tx.state.displayTurns.map((entry) => entry.id)).toEqual(['turn-1']);
+    expect(tx.state.activeTurnSnapshot?.id).toBe('turn-2');
+  });
+
+  it('rejects an older pagination page in latest-window mode', () => {
+    const tx = createTranscript();
+    tx.applyLatestPage(page([turn('turn-4', 4, msg('message-4'))], 1, 'one', 4), 2);
+
+    expect(tx.applyLatestPage(page([turn('turn-2', 2, msg('message-2'))], 1, 'one', 2, 4), 2)).toBe(
+      false
+    );
+    expect(tx.state.committedTurns.map((entry) => entry.id)).toEqual(['turn-4']);
   });
 
   it('rejects an older page after an amendment, including deleted rows', () => {

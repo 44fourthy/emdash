@@ -244,26 +244,31 @@ describe('history response ordering', () => {
     expect(harness.store.loadError).toBeNull();
   });
 
-  it('fills a multi-page reconnect gap and refreshes amendments beyond the latest page', async () => {
+  it('keeps reconnect history bounded to the latest page', async () => {
     harness = createContinuityHarness(fixture, [makeTurn(0)]);
     await harness.bootstrap();
+    harness.store.chatState.parseCaches.parseBlocks('user-0', 'Prompt 0');
+    const evictBlocks = vi.spyOn(harness.store.chatState.parseCaches, 'evictBlocks');
     harness.disconnect();
     const completed = Array.from({ length: 205 }, (_, seq) => makeTurn(seq));
     completed[0] = makeTurn(0, 'Amended oldest prompt');
     harness.setHistory(completed);
     harness.publish(makeTurn(205));
     harness.reconnect();
-    await vi.waitFor(() => expect(harness.committed).toHaveLength(205));
-    expect(harness.committed.map((turn) => turn.seq)).toEqual(completed.map((turn) => turn.seq));
-    expect(harness.committed[0].items[0]).toMatchObject({ text: 'Amended oldest prompt' });
+    await vi.waitFor(() => expect(harness.committed).toHaveLength(100));
+    expect(harness.committed.map((turn) => turn.seq)).toEqual(
+      completed.slice(-100).map((turn) => turn.seq)
+    );
+    expect(harness.store.chatState.transcript.findItemById('user-0')).toBeUndefined();
+    expect(evictBlocks).toHaveBeenCalledWith('user-0');
     expect(harness.active?.id).toBe('turn-205');
-    expect(harness.loadHistory).toHaveBeenCalledWith(
-      expect.objectContaining({ before: 105 }),
+    expect(harness.loadHistory).toHaveBeenCalledTimes(2);
+    expect(harness.loadHistory).toHaveBeenLastCalledWith(
+      expect.objectContaining({ before: undefined, limit: 100 }),
       expect.anything()
     );
-    expect(harness.loadHistory).toHaveBeenCalledWith(
-      expect.objectContaining({ before: 5 }),
-      expect.anything()
+    expect(harness.loadHistory.mock.calls.some(([input]) => input.before !== undefined)).toBe(
+      false
     );
   });
 

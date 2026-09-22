@@ -28,7 +28,14 @@ export const cardVars = createVariableThemeContract<MessageStyleVars & { height:
   attachGap: null,
 });
 
-export const cardRoot = style({ height: cardVars.height });
+export const cardFrame = style({
+  display: 'flex',
+  width: '100%',
+  height: cardVars.height,
+  justifyContent: 'flex-end',
+});
+
+export const cardRoot = style({ height: cardVars.height, flexShrink: 0 });
 
 // ── UserMessageCard ───────────────────────────────────────────────────────────
 
@@ -38,9 +45,9 @@ export const card = recipe({
     borderRadius: vars.radiusLg,
     borderStyle: 'solid',
     borderWidth: cardVars.cardBorder,
-    borderColor: vars.userCardBorder,
-    background: vars.userCardBg,
-    color: vars.fgBody,
+    borderColor: 'transparent',
+    background: vars.bubbleUser,
+    color: vars.bubbleUserFg,
     paddingLeft: cardVars.userCardPadX,
     paddingRight: cardVars.userCardPadX,
     paddingTop: cardVars.userCardPadY,
@@ -52,7 +59,7 @@ export const card = recipe({
       static: {},
       overflowing: {
         selectors: {
-          '&:hover': { borderColor: vars.userCardBorderHover },
+          '&:hover': { filter: 'brightness(0.96)' },
         },
       },
     },
@@ -61,7 +68,7 @@ export const card = recipe({
       false: {},
       true: {
         selectors: {
-          '&:hover': { borderColor: vars.userCardBorderHover },
+          '&:hover': { filter: 'brightness(0.96)' },
         },
       },
     },
@@ -89,14 +96,17 @@ export const stopButtonOverlay = style({
   borderRadius: vars.radiusSm,
   border: 'none',
   background: 'transparent',
-  color: vars.fgMuted,
+  color: vars.bubbleUserFg,
   cursor: 'pointer',
   opacity: 0,
   transition: 'opacity 150ms ease',
   selectors: {
     [`${userCardGroup}:hover &`]: { opacity: 1 },
     '&:focus-visible': { opacity: 1 },
-    '&:hover': { color: vars.fg },
+    '&:hover': {
+      color: vars.bubbleUserFg,
+      background: `color-mix(in srgb, ${vars.bubbleUserFg} 14%, transparent)`,
+    },
   },
 });
 
@@ -147,6 +157,12 @@ export const attachPlaceholder = style({
 export const cardFadeOverlay = style([
   fadeOverlayBottom,
   {
+    background: `linear-gradient(
+      to top,
+      ${vars.bubbleUser} 0%,
+      color-mix(in oklab, ${vars.bubbleUser}, transparent 50%) 40%,
+      color-mix(in oklab, ${vars.bubbleUser}, transparent 100%) 100%
+    )`,
     pointerEvents: 'none',
     position: 'absolute',
     right: 0,

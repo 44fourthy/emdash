@@ -11,6 +11,7 @@ import {
 } from '@core/features/workspaces/api/node/registry';
 import { HookCore, type Hookable } from '@core/primitives/hooks/api/hookable';
 import {
+  mergeGithubAccountId,
   mergeSshConnectionMetadata,
   sshConfigFromRow,
   type SshConfig,
@@ -105,6 +106,34 @@ export class MachinesService implements Hookable<MachinesServiceHooks> {
   async getMachines(): Promise<SshConfig[]> {
     const rows = await this.deps.db.select().from(sshConnectionsTable);
     return rows.map(sshConfigFromRow);
+  }
+
+  /**
+   * What account resolution needs about one host: who it is (so a code-owned
+   * pin can be looked up) and which account was picked for it.
+   */
+  async getGithubAccountContext(connectionId: string): Promise<
+    | {
+        host: string;
+        username: string;
+        storedAccountId: string | undefined;
+      }
+    | undefined
+  > {
+    const [row] = await this.deps.db
+      .select({
+        host: sshConnectionsTable.host,
+        username: sshConnectionsTable.username,
+        metadata: sshConnectionsTable.metadata,
+      })
+      .from(sshConnectionsTable)
+      .where(eq(sshConnectionsTable.id, connectionId));
+    if (!row) return undefined;
+    return {
+      host: row.host,
+      username: row.username,
+      storedAccountId: row.metadata?.githubAccountId,
+    };
   }
 
   async getMachineUsage(): Promise<SshConnectionUsage> {
@@ -225,7 +254,24 @@ export class MachinesService implements Hookable<MachinesServiceHooks> {
       forwardAgent: metadata.forwardAgent,
       proxyJump: metadata.proxyJump,
       syncLocalSettings: metadata.syncLocalSettings,
+      githubAccountId: metadata.githubAccountId,
     };
+  }
+
+  async setGithubAccount(id: string, accountId: string | null): Promise<SshConfig> {
+    const [row] = await this.deps.db
+      .select()
+      .from(sshConnectionsTable)
+      .where(eq(sshConnectionsTable.id, id));
+    if (!row) throw new Error(`SSH connection ${id} not found`);
+
+    const metadata = mergeGithubAccountId(row.metadata ?? {}, accountId);
+    await this.deps.db
+      .update(sshConnectionsTable)
+      .set({ metadata, updatedAt: new Date(this.now()).toISOString() })
+      .where(eq(sshConnectionsTable.id, id));
+
+    return sshConfigFromRow({ ...row, metadata });
   }
 
   async setSyncLocalSettings(id: string, enabled: boolean): Promise<SshConfig> {
@@ -237,7 +283,7 @@ export class MachinesService implements Hookable<MachinesServiceHooks> {
 
     const metadata: SshConnectionMetadata = {
       ...(row.metadata ?? {}),
-      version: '4',
+      version: '5',
       syncLocalSettings: enabled,
     };
     await this.deps.db

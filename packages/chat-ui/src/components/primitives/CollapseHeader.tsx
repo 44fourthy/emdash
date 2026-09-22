@@ -20,6 +20,7 @@ import {
   chevron,
   chevronExpanded,
   collapseHeader,
+  collapseIcon,
   collapseStatusError,
   collapseStatusPermission,
 } from './collapse-header.css';
@@ -42,6 +43,8 @@ export type CollapseHeaderProps = {
   awaitingPermission?: boolean;
   /** Explicit pixel height for the header row. */
   height: number;
+  /** Optional decorative icon rendered before the label. */
+  icon?: JSX.Element;
   children: JSX.Element;
 };
 
@@ -51,9 +54,20 @@ export function CollapseHeader(props: CollapseHeaderProps) {
       class={collapseHeader}
       style={{ height: `${props.height}px` }}
       role="button"
+      tabIndex={0}
       aria-expanded={props.expanded ? 'true' : 'false'}
       data-collapse-id={props.id}
+      on:keydown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        event.currentTarget.click();
+      }}
     >
+      <Show when={props.icon}>
+        <span class={collapseIcon} aria-hidden="true">
+          {props.icon}
+        </span>
+      </Show>
       <span classList={{ [textShimmer]: !!props.active }}>{props.children}</span>
       <span class={chevron} classList={{ [chevronExpanded]: props.expanded }} aria-hidden="true">
         ›

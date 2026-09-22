@@ -43,6 +43,13 @@ import {
 } from './browser-toolbar-actions';
 import { browserUrlInputText } from './browser-url-input';
 import type { BrowserWebviewAdapter } from './browser-webview-types';
+import { VisualInspectorToolbarButton } from './visual-inspector/visual-inspector-toolbar-button';
+
+export type BrowserInspectorControls = {
+  active: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+};
 
 // Selection is conveyed by the checkmark alone (matching SelectItem); the base
 // radio item pins a background on the checked row and mutes unchecked rows.
@@ -62,6 +69,7 @@ export function BrowserToolbar({
   onForceReload,
   onSetZoomFactor,
   onFocusUrl,
+  inspector,
 }: {
   session: BrowserSessionSnapshot;
   adapter: BrowserWebviewAdapter | null;
@@ -73,6 +81,7 @@ export function BrowserToolbar({
   onForceReload?: () => void;
   onSetZoomFactor?: (factor: number) => void;
   onFocusUrl?: (focus: () => void) => void;
+  inspector?: BrowserInspectorControls;
 }) {
   const [urlText, setUrlText] = useState(browserUrlInputText(session.currentUrl));
   const [urlError, setUrlError] = useState<string | null>(null);
@@ -225,6 +234,13 @@ export function BrowserToolbar({
           )}
         />
       </ToolbarIconButton>
+      {inspector && (
+        <VisualInspectorToolbarButton
+          active={inspector.active}
+          disabled={inspector.disabled}
+          onToggle={inspector.onToggle}
+        />
+      )}
       <DropdownMenu.Root>
         <DropdownMenu.Trigger
           render={

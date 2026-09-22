@@ -76,6 +76,7 @@ export function createMachinesWireController(
     },
     saveMachine: (input) => service.saveMachine(input),
     setSyncLocalSettings: ({ id, enabled }) => service.setSyncLocalSettings(id, enabled),
+    setGithubAccount: ({ id, accountId }) => service.setGithubAccount(id, accountId),
     deleteMachine: ({ id }) => service.deleteMachine(id),
     renameMachine: ({ id, name }) => service.renameMachine(id, name),
   });

@@ -5,12 +5,12 @@ import { measureProseNaturalWidth } from '@components/rows/markdown/prose/layout
 import type { MeasureCtx, RenderCtx } from '@core/define';
 import type { ProseBlock } from '@core/markdown/document';
 import { defineUnit } from '@core/units';
-import { Show, createMemo } from 'solid-js';
+import { Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
 import type { ChatExecute } from '@/model';
 import { ExecuteBody } from './Execute';
 import { executeHeaderTitle, executeShowsBody } from './execute-layout';
 import { executeLines, maxOutputLineWidth, type ExecuteDisplayLine } from './execute-lines';
-import { executeHeaderCommand } from './execute.css';
+import { executeDuration, executeHeaderCommand } from './execute.css';
 
 export { executeFromItem } from './execute.presenter';
 
@@ -173,6 +173,7 @@ function ExecuteUnitRender(props: { data: ChatExecute; ctx: RenderCtx; vars: Exe
       id={props.data.id}
       ctx={props.ctx}
       height={totalH()}
+      appearance="activity"
       headerH={props.vars.rowH}
       expanded={isExpanded()}
       bodyVisible={showBody()}
@@ -186,6 +187,7 @@ function ExecuteUnitRender(props: { data: ChatExecute; ctx: RenderCtx; vars: Exe
           {title().text}
         </span>
       }
+      headerRight={<ExecuteDuration item={props.data} />}
     >
       <Show when={showBody() && codeLineH() > 0}>
         <ExecuteBody
@@ -201,6 +203,39 @@ function ExecuteUnitRender(props: { data: ChatExecute; ctx: RenderCtx; vars: Exe
         />
       </Show>
     </CollapsibleCard>
+  );
+}
+
+function formatDuration(durationMs: number): string {
+  if (durationMs < 1000) return '<1s';
+  return `${Math.floor(durationMs / 1000)}s`;
+}
+
+function ExecuteDuration(props: { item: ChatExecute }) {
+  const [now, setNow] = createSignal(Date.now());
+  let timer: ReturnType<typeof setInterval> | undefined;
+
+  createEffect(() => {
+    clearInterval(timer);
+    timer = undefined;
+    if (props.item.status !== 'running' || props.item.startedAt <= 0) return;
+    setNow(Date.now());
+    timer = setInterval(() => setNow(Date.now()), 1000);
+  });
+  onCleanup(() => clearInterval(timer));
+
+  const duration = () => {
+    if (props.item.durationMs !== undefined) return props.item.durationMs;
+    if (props.item.status === 'running' && props.item.startedAt > 0) {
+      return Math.max(0, now() - props.item.startedAt);
+    }
+    return undefined;
+  };
+
+  return (
+    <Show when={duration()}>
+      {(value) => <span class={executeDuration}>{formatDuration(value())}</span>}
+    </Show>
   );
 }
 

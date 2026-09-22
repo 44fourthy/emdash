@@ -6,6 +6,7 @@ import {
   resolveProjectAccount,
   type ProjectAccountRepository,
 } from '../project-account-resolution';
+import { hostAccountLockForProject } from './use-host-account-lock';
 import { useAccounts } from './use-provider-accounts';
 
 type ProjectAccountOptions = { repository?: ProjectAccountRepository };
@@ -33,10 +34,13 @@ export function useProjectAccount(
   const repo =
     options.repository?.kind === 'project' ? getGitRepositoryStore(projectId) : undefined;
   if (!domains || !inventory || repo?.loading) return null;
+  const accounts = options.accepts ? inventory.filter(options.accepts) : inventory;
   return resolveProjectAccount({
     providerId,
     stored: domains.integrationAccounts.stored,
-    accounts: options.accepts ? inventory.filter(options.accepts) : inventory,
+    accounts,
+    // Resolved against the same inventory the resolution itself uses.
+    hostAccountLock: hostAccountLockForProject(projectId, accounts),
     repository:
       options.repository?.kind === 'project'
         ? {

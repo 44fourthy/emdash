@@ -42,6 +42,15 @@ export const cardHeader = style({
   },
 });
 
+export const cardHeaderActivity = style({
+  selectors: {
+    '&:hover': {
+      background: 'transparent',
+      color: vars.fg,
+    },
+  },
+});
+
 export const cardHeaderLeft = style({
   display: 'flex',
   alignItems: 'center',

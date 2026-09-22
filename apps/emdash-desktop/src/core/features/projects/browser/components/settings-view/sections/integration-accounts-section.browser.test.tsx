@@ -12,6 +12,11 @@ const state = vi.hoisted(() => ({
 vi.mock('@core/features/integrations/api/browser/use-provider-accounts', () => ({
   useAccounts: () => ({ data: state.accounts, isError: false }),
 }));
+vi.mock('@core/features/integrations/api/browser/use-host-account-lock', () => ({
+  // These cases cover projects with no machine lock. Locked rows are covered by
+  // host-account-lock.test.ts and use-project-account.test.ts.
+  hostAccountLockForProject: () => undefined,
+}));
 vi.mock('@core/features/integrations/contributions/browser/integrations-provider', () => ({
   useIntegrationsContext: () => ({
     integrations: [
@@ -67,6 +72,7 @@ describe('project integration account rows', () => {
     await act(async () =>
       root.render(
         <IntegrationAccountsSection
+          projectId="project-1"
           integrationAccountsForm={{}}
           updateIntegrationAccounts={update}
           repositoryHost={null}
@@ -100,6 +106,7 @@ describe('project integration account rows', () => {
     const render = () =>
       root.render(
         <IntegrationAccountsSection
+          projectId="project-1"
           integrationAccountsForm={{ jira: { kind: 'account', accountId: 'jira:a' } }}
           updateIntegrationAccounts={vi.fn()}
           repositoryHost={null}
@@ -140,6 +147,7 @@ describe('project integration account rows', () => {
       const render = (form: StoredIntegrationAccounts) =>
         root.render(
           <IntegrationAccountsSection
+            projectId="project-1"
             integrationAccountsForm={form}
             updateIntegrationAccounts={vi.fn()}
             repositoryHost="code.example"
@@ -170,6 +178,7 @@ describe('project integration account rows', () => {
     const render = () =>
       root.render(
         <IntegrationAccountsSection
+          projectId="project-1"
           integrationAccountsForm={form}
           updateIntegrationAccounts={update}
           repositoryHost="github.com"

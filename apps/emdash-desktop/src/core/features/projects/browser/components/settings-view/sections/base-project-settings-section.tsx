@@ -190,6 +190,7 @@ export const BaseProjectSettingsSection = observer(function BaseProjectSettingsS
   return (
     <>
       <IntegrationAccountsSection
+        projectId={projectId}
         integrationAccountsForm={integrationAccountsForm}
         updateIntegrationAccounts={updateIntegrationAccounts}
         repositoryHost={

@@ -27,6 +27,7 @@ import type {
   NormalizedEvent,
   SessionState,
   TerminalState,
+  TranscriptTurn,
 } from '#runtimes/acp/api';
 import { ACP_UNAMBIGUOUS_START_ERROR_TYPES, acpErr } from '#runtimes/acp/api';
 import type { FsPort } from '#runtimes/acp/node/agent-ports/fs-port';
@@ -36,7 +37,7 @@ import type {
   AcpConnectionContext,
   AcpConnectionSource,
 } from '#runtimes/acp/node/connection/source';
-import type { AcpChatHistory, SessionCell } from '#runtimes/acp/node/session/cell';
+import type { SessionCell } from '#runtimes/acp/node/session/cell';
 import {
   closedSessionState,
   createAcpSessionLiveHost,
@@ -101,6 +102,17 @@ type SuspendedIntentEntry = {
   retained: RetainedPresentation;
   summary: SuspendedIntentListEntry;
 };
+
+function lowerBoundTurnSeq(turns: readonly TranscriptTurn[], target: number): number {
+  let low = 0;
+  let high = turns.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (turns[middle].seq < target) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
 
 export class SessionManager {
   readonly sessionHost: AcpSessionLiveHost = createAcpSessionLiveHost();
@@ -543,20 +555,23 @@ export class SessionManager {
   }
 
   getHistory(conversationId: string, before?: number, limit = 50): HistoryPage {
+    const record = this.readyRecord(conversationId);
     if (
       (this.retained.has(conversationId) || this.suspendedIntents.has(conversationId)) &&
-      !this.readyRecord(conversationId)
+      !record
     ) {
       return { turns: [], nextCursor: null, unavailable: true };
     }
-    const turns = this.getChatHistory(conversationId).committed;
-    const filtered = before === undefined ? turns : turns.filter((turn) => turn.seq < before);
-    const page = [...filtered].sort((a, b) => b.seq - a.seq).slice(0, limit);
-    const nextCursor = page.length === limit ? page.at(-1)!.seq : null;
+    const turns = record?.cell.transcript.history ?? [];
+    const end = before === undefined ? turns.length : lowerBoundTurnSeq(turns, before);
+    const pageLimit = Math.max(0, Math.floor(limit));
+    const start = Math.max(0, end - pageLimit);
+    const page = structuredClone(turns.slice(start, end));
+    const nextCursor = pageLimit > 0 && page.length === pageLimit ? page[0].seq : null;
     return {
-      turns: page.reverse(),
+      turns: page,
       nextCursor,
-      position: this.readyRecord(conversationId)?.cell.transcript.position,
+      position: record?.cell.transcript.position,
       coverage: { fromSeq: nextCursor, beforeSeq: before ?? null },
     };
   }
@@ -928,10 +943,6 @@ export class SessionManager {
 
   private readyRecord(conversationId: string): SessionRecord | undefined {
     return this.retained.get(conversationId)?.readyRecord();
-  }
-
-  private getChatHistory(conversationId: string): AcpChatHistory {
-    return this.readyRecord(conversationId)?.cell.history() ?? { committed: [], active: null };
   }
 
   private recordForCallbacks(conversationId: string): SessionRecord | undefined {

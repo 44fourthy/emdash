@@ -22,6 +22,7 @@ export const diffRoot = style({ height: diffCardVars.height });
 
 export const diffHeader = recipe({
   base: {
+    position: 'relative',
     height: diffCardVars.headerH,
     border: `1px solid ${vars.border}`,
     display: 'flex',
@@ -32,6 +33,7 @@ export const diffHeader = recipe({
     cursor: 'pointer',
     fontSize: '0.75rem',
     transition: 'background 150ms',
+    pointerEvents: 'none',
     selectors: {
       '&:hover': { background: vars.bg3 },
     },
@@ -44,8 +46,30 @@ export const diffHeader = recipe({
         borderBottom: 'none',
       },
       false: {
+        borderColor: 'transparent',
         borderRadius: vars.radiusLg,
       },
+    },
+  },
+});
+
+/** Full-row disclosure target; the filename button remains a separate sibling. */
+export const diffDisclosureButton = style({
+  position: 'absolute',
+  inset: 0,
+  zIndex: 0,
+  width: '100%',
+  margin: 0,
+  padding: 0,
+  border: 0,
+  borderRadius: 'inherit',
+  background: 'transparent',
+  cursor: 'pointer',
+  pointerEvents: 'auto',
+  selectors: {
+    '&:focus-visible': {
+      outline: '2px solid currentColor',
+      outlineOffset: '-2px',
     },
   },
 });
@@ -58,6 +82,36 @@ export const diffFileName = style({
   whiteSpace: 'nowrap',
   fontSize: vars.typeBodyFontSize,
 });
+
+export const diffFileButton = style({
+  position: 'relative',
+  zIndex: 1,
+  appearance: 'none',
+  margin: 0,
+  padding: 0,
+  border: 0,
+  background: 'transparent',
+  cursor: 'pointer',
+  font: 'inherit',
+  textAlign: 'left',
+  pointerEvents: 'auto',
+  selectors: {
+    '&:hover': { color: vars.fg },
+    '&:focus-visible': {
+      outline: '1px solid currentColor',
+      outlineOffset: '2px',
+    },
+  },
+});
+
+export const diffChevron = style({
+  display: 'inline-block',
+  flexShrink: 0,
+  fontSize: '10px',
+  transition: 'transform 150ms ease-out',
+});
+
+export const diffChevronExpanded = style({ transform: 'rotate(90deg)' });
 
 export const diffAddsCount = style({
   color: vars.diffAdded,

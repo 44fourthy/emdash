@@ -30,10 +30,14 @@ import {
 import { z } from 'zod';
 import type { SshConfig, SshConnectionUsage } from '@core/primitives/ssh/api';
 
-// syncLocalSettings is excluded from save: it is toggled through the dedicated
-// setSyncLocalSettings procedure so flipping it never drops the pinned connection.
+// syncLocalSettings and githubAccountId are excluded from save: each is set
+// through its own dedicated procedure so changing it never drops the pinned
+// connection.
 export type SaveMachineInput = Partial<Pick<SshConfig, 'id'>> &
-  Omit<SshConfig, 'id' | 'syncLocalSettings'> & { password?: string; passphrase?: string };
+  Omit<SshConfig, 'id' | 'syncLocalSettings' | 'githubAccountId'> & {
+    password?: string;
+    passphrase?: string;
+  };
 
 export type MachineSystemDependencyTier = 'required' | 'recommended';
 
@@ -136,6 +140,15 @@ export const machinesContract = defineContract({
    */
   setSyncLocalSettings: procedure({
     input: z.object({ id: z.string(), enabled: z.boolean() }),
+    output: z.custom<SshConfig>(),
+  }),
+  /**
+   * Sets this host's locked GitHub account (connection metadata, desktop-side).
+   * `accountId: null` clears it. Separate from saveMachine for the same reason
+   * as the sync toggle: this must never drop the pinned host connection.
+   */
+  setGithubAccount: procedure({
+    input: z.object({ id: z.string(), accountId: z.string().nullable() }),
     output: z.custom<SshConfig>(),
   }),
   deleteMachine: procedure({

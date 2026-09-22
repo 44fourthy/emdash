@@ -203,6 +203,38 @@ describe('useWorkspaceConfig branch selection', () => {
     });
   });
 
+  it('blocks checkout mode when the repository workspace already has the branch', async () => {
+    workspaceOptionsMock.current = [
+      {
+        key: 'project-1\0repo-workspace-1',
+        workspaceId: 'repo-workspace-1',
+        kind: 'repository',
+        path: '/repo',
+        branchName: 'main',
+        linesAdded: null,
+        linesDeleted: null,
+        taskName: null,
+        isLive: false,
+        linkedTaskCount: 0,
+      },
+    ];
+
+    await renderProbe({
+      mode: 'new-worktree',
+      presetId: 'new-worktree',
+      branchSelection: {
+        createBranchAndWorktree: false,
+      },
+    });
+
+    expect(latestState?.branchConflict).toMatchObject({
+      workspaceId: 'repo-workspace-1',
+      kind: 'repository',
+      branchName: 'main',
+    });
+    expect(latestState?.isValid).toBe(false);
+  });
+
   it('restores checkout-branch automations as use-branch configs', async () => {
     await renderProbe({
       mode: 'new-worktree',

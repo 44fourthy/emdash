@@ -1,4 +1,5 @@
 import { err, ok, type Result } from '@emdash/shared';
+import { normalizeForgeHost } from '@emdash/shared/util';
 
 export type RepositoryRef = {
   host: string;
@@ -17,9 +18,13 @@ export function isGitHubDotComHost(host: string): boolean {
   return normalizeRepositoryHost(host) === 'github.com';
 }
 
+/**
+ * The canonical forge host for a git remote host. Delegates to the shared rule
+ * so the desktop and the provider plugins agree on what counts as github.com,
+ * including ssh aliases such as `github.com-rc3r0`.
+ */
 export function normalizeRepositoryHost(host: string): string {
-  const value = host.trim().toLowerCase();
-  return value === 'www.github.com' ? 'github.com' : value;
+  return normalizeForgeHost(host);
 }
 
 function stripGitSuffix(value: string): string {

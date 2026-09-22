@@ -1,6 +1,7 @@
 import { useTheme } from '@components/contexts/ThemeContext';
 import { HEADER_ROW_EXTRA_H } from '@components/engine/row-metrics';
 import { CollapseHeader } from '@components/primitives/CollapseHeader';
+import { IconThought } from '@components/primitives/icons';
 import type { MeasureCtx, RenderCtx } from '@core/define';
 import { defineUnit } from '@core/units';
 import { pxTokens } from '@styles/px-tokens';
@@ -74,10 +75,7 @@ function ThinkingGroupHeader(props: {
     const active = activeStep(props.item);
     const duration = groupDurationMs(props.item, now());
     const durationLabel = duration === undefined ? '' : ` · ${formatDuration(duration)}`;
-    if (active) {
-      return `Reasoning · step ${props.item.steps.length}${durationLabel}`;
-    }
-    return `Reasoned in ${props.item.steps.length} steps${durationLabel}`;
+    return `${active ? 'Thinking' : 'Thoughts'}${durationLabel}`;
   };
 
   return (
@@ -86,6 +84,7 @@ function ThinkingGroupHeader(props: {
       expanded={props.expanded}
       active={activeStep(props.item) !== undefined}
       height={props.height}
+      icon={<IconThought />}
     >
       {label()}
     </CollapseHeader>

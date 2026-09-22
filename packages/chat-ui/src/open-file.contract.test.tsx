@@ -53,7 +53,7 @@ function dispatchLinkClick(target: HTMLElement): boolean {
 
 function clickableRowForPath(host: HTMLElement, path: string): HTMLElement {
   const label = host.querySelector(`[title="${path}"]`);
-  const row = label?.closest('[role="button"]') as HTMLElement | null;
+  const row = label?.closest('button, [role="button"]') as HTMLElement | null;
   if (!row) throw new Error(`No clickable row found for ${path}`);
   return row;
 }
