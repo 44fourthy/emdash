@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { playwright } from '@vitest/browser-playwright';
 import { defineConfig } from 'vitest/config';
+import { visualInspectorPageScriptPlugin } from './tooling/vite/visual-inspector-page-script';
 
 const alias = {
   '@': resolve(__dirname, 'src'),
@@ -23,6 +24,12 @@ const systemNodeAlias = {
 };
 
 export default defineConfig({
+  plugins: [
+    // Resolves the injected page-script module for tests that exercise the picker.
+    visualInspectorPageScriptPlugin({
+      entry: resolve(__dirname, 'src/core/features/browser/browser/visual-inspector/page/index.ts'),
+    }),
+  ],
   resolve: { alias },
   test: {
     projects: [

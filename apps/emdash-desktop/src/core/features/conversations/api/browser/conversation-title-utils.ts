@@ -29,6 +29,15 @@ export function formatConversationTitleForDisplay(
   return `${capitalizeProviderId(providerId)} (${index})`;
 }
 
+/**
+ * Whether a title is still the one we generated rather than anything the user
+ * wrote. Callers use it to decide if a title may be replaced: a renamed
+ * conversation fails this and is left alone.
+ */
+export function isGeneratedConversationTitle(title: string, providerId: AgentProviderId): boolean {
+  return parseDefaultTitleIndex(title, providerId) !== null;
+}
+
 export function nextDefaultConversationTitle(
   providerId: AgentProviderId,
   conversations: ConversationTitleInput[]

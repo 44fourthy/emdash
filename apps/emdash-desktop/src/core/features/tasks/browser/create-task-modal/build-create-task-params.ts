@@ -49,6 +49,7 @@ export function buildInitialConversation(
         : {}),
     autoApprove: state.autoApprove,
     model: state.model ?? undefined,
+    effort: state.effort ?? undefined,
     type,
   };
 }

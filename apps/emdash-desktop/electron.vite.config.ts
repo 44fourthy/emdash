@@ -4,6 +4,10 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
 import { desktopWorkers } from './src/core/manifests/node/workers';
+import { visualInspectorPageScriptPlugin } from './tooling/vite/visual-inspector-page-script';
+
+const VISUAL_INSPECTOR_PAGE_SCRIPT_ENTRY =
+  'src/core/features/browser/browser/visual-inspector/page/index.ts';
 
 function desktopWorkerBuildInputs(): Record<string, string> {
   return Object.fromEntries(
@@ -102,7 +106,11 @@ export default defineConfig({
   },
   renderer: {
     root: 'src/renderer',
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      visualInspectorPageScriptPlugin({ entry: resolve(VISUAL_INSPECTOR_PAGE_SCRIPT_ENTRY) }),
+      react(),
+      tailwindcss(),
+    ],
     resolve: {
       alias: {
         '@': resolve('src'),

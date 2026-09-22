@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { browserControlsRegistry } from '@core/features/browser/api/browser/browser-controls-registry';
 import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
 import { getBrowserClient } from '@core/features/browser/api/browser/client';
+import { visualInspectorStore } from '@core/features/browser/api/browser/visual-inspector-store';
 import { usePreviewServers } from '@core/features/workbench/api/browser/task-composition-context';
 import {
   cycleNextTabCommand,
@@ -27,6 +28,8 @@ import {
   type BrowserWebviewAdapter,
   type BrowserWebviewElement,
 } from './browser-webview-types';
+import { useVisualInspector } from './visual-inspector/use-visual-inspector';
+import { VisualInspectorLayer } from './visual-inspector/visual-inspector-layer';
 
 const WEBVIEW_ALLOW_POPUPS_ATTRIBUTE = 'true' as unknown as boolean;
 
@@ -268,6 +271,14 @@ export const BrowserPane = observer(function BrowserPane({
     });
   }, [adapter, sessionBrowserId]);
 
+  const visualInspector = useVisualInspector({
+    browserId: sessionBrowserId ?? '',
+    adapter,
+    currentUrl: session?.currentUrl ?? '',
+  });
+  const inspectorState = visualInspectorStore.stateFor(sessionBrowserId ?? '');
+  const inspectorDisabled = adapter === null || session?.isLoading === true;
+
   if (!session) {
     return (
       <div className="flex h-full min-h-0 items-center justify-center bg-background text-sm text-foreground-muted">
@@ -275,7 +286,6 @@ export const BrowserPane = observer(function BrowserPane({
       </div>
     );
   }
-
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <BrowserToolbar
@@ -291,8 +301,13 @@ export const BrowserPane = observer(function BrowserPane({
         onFocusUrl={(focus) => {
           focusUrlRef.current = focus;
         }}
+        inspector={{
+          active: inspectorState.status === 'picking',
+          disabled: inspectorDisabled,
+          onToggle: () => void visualInspector.togglePick(),
+        }}
       />
-      <div className="emlight min-h-0 flex-1 bg-background">
+      <div className="emlight relative min-h-0 flex-1 bg-background">
         {loadError && loadErrorPresentation ? (
           <BrowserLoadErrorView
             url={loadErrorUrl}
@@ -315,6 +330,9 @@ export const BrowserPane = observer(function BrowserPane({
           <div className="flex h-full items-center justify-center text-sm text-foreground-muted">
             Preparing browser session
           </div>
+        )}
+        {!loadError && !showStartPage && (
+          <VisualInspectorLayer browserId={session.browserId} picker={visualInspector} />
         )}
       </div>
     </div>

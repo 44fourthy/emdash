@@ -141,6 +141,107 @@ describe('executeCreateWorktree resolve-base', () => {
   });
 });
 
+// The inspect stage's branch check (spec: pr-workspace-model provisioning): a branch
+// lives in one worktree at a time, so a second add for the same branch is a doomed
+// operation that must be reported as a branch collision rather than git's exit 128.
+describe('executeCreateWorktree inspect', () => {
+  let root: string;
+  let repoPath: string;
+
+  beforeEach(async () => {
+    root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ws-inspect-')));
+    repoPath = await makeRepo(root, 'repo');
+  });
+
+  afterEach(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('fails at inspect before any creation work when the branch is checked out elsewhere', async () => {
+    const firstPath = path.join(root, 'first-wt');
+    const first = await executeCreateWorktree({
+      git: gitContext,
+      repositoryPath: repoPath,
+      worktreePath: firstPath,
+      branch: 'feat/beui-console',
+      baseRef: 'main',
+      onStage: () => undefined,
+    });
+    expect(first).toMatchObject({ status: 'succeeded', createdWorktree: true });
+
+    const stages: string[] = [];
+    const result = await executeCreateWorktree({
+      git: gitContext,
+      repositoryPath: repoPath,
+      worktreePath: path.join(root, 'second-wt'),
+      branch: 'feat/beui-console',
+      baseRef: 'main',
+      onStage: (stage) => stages.push(stage),
+    });
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      stage: 'inspect',
+      message: expect.stringContaining(
+        `Branch feat/beui-console is already checked out at ${firstPath}`
+      ),
+    });
+    // Nothing was attempted after inspect, so there is no debris to roll back.
+    expect(stages).toEqual(['inspect']);
+    await expect(fs.access(path.join(root, 'second-wt'))).rejects.toThrow();
+    // The worktree that holds the claim is untouched.
+    expect(git(firstPath, 'branch', '--show-current')).toBe('feat/beui-console');
+  });
+
+  it('replays idempotently when that same path already holds the branch', async () => {
+    const worktreePath = path.join(root, 'replay-wt');
+    const first = await executeCreateWorktree({
+      git: gitContext,
+      repositoryPath: repoPath,
+      worktreePath,
+      branch: 'feat/beui-console',
+      baseRef: 'main',
+      onStage: () => undefined,
+    });
+    expect(first).toMatchObject({ status: 'succeeded', createdWorktree: true });
+
+    const stages: string[] = [];
+    const second = await executeCreateWorktree({
+      git: gitContext,
+      repositoryPath: repoPath,
+      worktreePath,
+      branch: 'feat/beui-console',
+      baseRef: 'main',
+      onStage: (stage) => stages.push(stage),
+    });
+
+    expect(second).toMatchObject({ status: 'succeeded', createdWorktree: false });
+    expect(stages).toEqual(['inspect', 'verify']);
+  });
+
+  it('still creates a second worktree for a different branch', async () => {
+    await executeCreateWorktree({
+      git: gitContext,
+      repositoryPath: repoPath,
+      worktreePath: path.join(root, 'first-wt'),
+      branch: 'feat/beui-console',
+      baseRef: 'main',
+      onStage: () => undefined,
+    });
+
+    const result = await executeCreateWorktree({
+      git: gitContext,
+      repositoryPath: repoPath,
+      worktreePath: path.join(root, 'sibling-wt'),
+      branch: 'feat/beui-console-2',
+      baseRef: 'main',
+      onStage: () => undefined,
+    });
+
+    expect(result).toMatchObject({ status: 'succeeded', createdWorktree: true });
+  });
+});
+
 // Integration tests for the gitSetup stages (spec: pr-workspace-model provisioning):
 // fetch-branch materializes refs/heads/<branch> from an arbitrary source ref with a
 // plain (never force) refspec, configure-branch writes upstream tracking and the PR

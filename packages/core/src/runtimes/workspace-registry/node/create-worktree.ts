@@ -71,7 +71,8 @@ export async function executeCreateWorktree(
     if (!safe.success) {
       return { status: 'failed', stage: 'inspect', message: safe.error.message };
     }
-    existing = (await listWorktreePaths(exec)).has(
+    const listed = await listWorktrees(exec);
+    existing = listed.paths.has(
       nativePathIdentityKey(await canonicalOrResolved(execution.worktreePath))
     );
     if (existing) {
@@ -87,6 +88,21 @@ export async function executeCreateWorktree(
           message:
             `Worktree ${execution.worktreePath} is checked out on ` +
             `${current || 'a detached HEAD'}, not ${execution.branch}`,
+        };
+      }
+    } else {
+      // A branch lives in exactly one worktree, so a second add for it is doomed
+      // before it starts. Reporting the collision here names the branch and the path
+      // holding it (a stale admin entry over a deleted directory included) rather than
+      // surfacing git's own exit 128 from add-worktree.
+      const owner = listed.branchWorktrees.get(execution.branch);
+      if (owner !== undefined) {
+        return {
+          status: 'failed',
+          stage: 'inspect',
+          message:
+            `Branch ${execution.branch} is already checked out at ${owner}; ` +
+            'git cannot check one branch out in two worktrees',
         };
       }
     }
@@ -209,7 +225,7 @@ export async function executeCreateWorktree(
   let finalPath: string;
   try {
     finalPath = await canonicalOrResolved(execution.worktreePath);
-    if (!(await listWorktreePaths(exec)).has(nativePathIdentityKey(finalPath))) {
+    if (!(await listWorktrees(exec)).paths.has(nativePathIdentityKey(finalPath))) {
       return await fail(
         'verify',
         new Error(`Worktree was not listed after creation: ${execution.worktreePath}`)
@@ -256,14 +272,27 @@ async function rollback(
   }
 }
 
-async function listWorktreePaths(exec: BoundExec): Promise<Set<string>> {
+type WorktreeListing = {
+  /** Identity keys of every path git currently has checked out as a worktree. */
+  paths: Set<string>;
+  /** Branch name → the worktree path holding it, from the porcelain branch line. */
+  branchWorktrees: Map<string, string>;
+};
+
+async function listWorktrees(exec: BoundExec): Promise<WorktreeListing> {
   const result = await exec.exec(['worktree', 'list', '--porcelain']);
   const paths = new Set<string>();
+  const branchWorktrees = new Map<string, string>();
+  let current: string | null = null;
   for (const line of result.stdout.split('\n')) {
-    if (!line.startsWith('worktree ')) continue;
-    paths.add(nativePathIdentityKey(await canonicalOrResolved(line.slice('worktree '.length))));
+    if (line.startsWith('worktree ')) {
+      current = line.slice('worktree '.length);
+      paths.add(nativePathIdentityKey(await canonicalOrResolved(current)));
+    } else if (current !== null && line.startsWith('branch refs/heads/')) {
+      branchWorktrees.set(line.slice('branch refs/heads/'.length), current);
+    }
   }
-  return paths;
+  return { paths, branchWorktrees };
 }
 
 async function branchExists(exec: BoundExec, branch: string): Promise<boolean> {

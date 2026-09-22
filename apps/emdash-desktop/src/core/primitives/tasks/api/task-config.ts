@@ -21,6 +21,12 @@ const v1Schema = z.object({
       initialPrompt: z.string().optional(),
       initialQueue: z.array(initialQueuePromptSchema).optional(),
       model: z.string().optional(),
+      /**
+       * Provider reasoning/effort id for the initial conversation. Carried the
+       * same way `model` is, so a task-created session starts on the effort
+       * the user last chose instead of the provider's own default.
+       */
+      effort: z.string().optional(),
       type: z.enum(['pty', 'acp']).optional(),
     })
     .optional(),

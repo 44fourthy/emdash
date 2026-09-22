@@ -41,6 +41,12 @@ vi.mock('./browser-toolbar', async () => {
   };
 });
 
+// The inspector layer resolves the task's agent conversations, which needs a task
+// view provider this URL-loading test does not mount.
+vi.mock('./visual-inspector/visual-inspector-layer', () => ({
+  VisualInspectorLayer: () => null,
+}));
+
 describe('BrowserPane', () => {
   let dom: JSDOM;
   let root: Root;

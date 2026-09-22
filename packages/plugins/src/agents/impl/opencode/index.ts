@@ -18,6 +18,30 @@ const OPENCODE_PLUGIN_PATH = 'plugins/emdash-notifications.js';
 const validateSessionId = (id: string) => id.startsWith('ses');
 import { icon } from './icon';
 
+/**
+ * Capabilities OpenCode ships but leaves off unless told otherwise. They are
+ * read from the environment only — an `experimental` block in opencode.json is
+ * parsed and then ignored — so they have to ride along with the spawn, or the
+ * agent silently runs with a smaller toolset than the CLI supports.
+ *
+ * The two numeric ones are not switches: `OUTPUT_TOKEN_MAX` caps a single
+ * response (the DeepSeek models here allow 384k) and `BASH_DEFAULT_TIMEOUT_MS`
+ * replaces the built-in 120000 default.
+ */
+const OPENCODE_CAPABILITY_ENV: Record<string, string> = {
+  OPENCODE_EXPERIMENTAL_PARALLEL: 'true',
+  OPENCODE_ENABLE_PARALLEL: 'true',
+  OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: 'true',
+  OPENCODE_EXPERIMENTAL_CODE_MODE: 'true',
+  // Long runs otherwise get compacted mid-task, which loses the thread of what
+  // the agent was doing.
+  OPENCODE_DISABLE_AUTOCOMPACT: 'true',
+  OPENCODE_ENABLE_QUESTION_TOOL: 'true',
+  OPENCODE_EXPERIMENTAL_LSP_TOOL: 'true',
+  OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: '64000',
+  OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS: '600000',
+};
+
 export const plugin = definePlugin(
   {
     id: 'opencode',
@@ -92,8 +116,12 @@ export const provider = registerPluginBehavior(plugin, {
     // presence is actually knowable. See platform-launcher.ts.
     buildSpawn: (ctx) =>
       process.platform === 'win32'
-        ? { command: ctx.cli, args: ['acp'] }
-        : { command: '/bin/sh', args: buildAcpSpawnArgs(ctx.cli, ['acp']) },
+        ? { command: ctx.cli, args: ['acp'], env: OPENCODE_CAPABILITY_ENV }
+        : {
+            command: '/bin/sh',
+            args: buildAcpSpawnArgs(ctx.cli, ['acp']),
+            env: OPENCODE_CAPABILITY_ENV,
+          },
     connect: (io, toClient) => {
       return connectStdioAcp(io, toClient);
     },
@@ -101,7 +129,10 @@ export const provider = registerPluginBehavior(plugin, {
   prompt: {
     buildCommand: (ctx) =>
       buildStandardCommand(ctx, {
-        extraEnv: ctx.autoApprove ? { OPENCODE_PERMISSION: '{"*":"allow"}' } : {},
+        extraEnv: {
+          ...OPENCODE_CAPABILITY_ENV,
+          ...(ctx.autoApprove ? { OPENCODE_PERMISSION: '{"*":"allow"}' } : {}),
+        },
         initialPromptFlag: '--prompt',
         modelFlag: '--model',
         resumeFlag: '--session',
