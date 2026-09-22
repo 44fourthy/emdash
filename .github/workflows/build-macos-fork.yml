@@ -1,0 +1,175 @@
+name: Build macOS (unsigned fork build)
+
+# Produces a runnable macOS arm64 build from this fork.
+#
+# Three things this workflow has to get right, each learned the hard way:
+#
+#  1. It must run on macOS. electron-builder invokes @electron/rebuild, which
+#     invokes node-gyp, which refuses to cross-compile native modules. Building
+#     on Linux fails at @parcel/watcher.
+#
+#  2. It must build the whole workspace. The desktop app imports workspace
+#     packages such as @emdash/wire, so a filtered build leaves them unbuilt and
+#     Rollup cannot resolve @emdash/wire/worker.
+#
+#  3. It must produce a *correctly signed* app with native modules built for
+#     Electron's ABI rather than Node's. An app that is merely linker-signed is
+#     killed by macOS at launch, and one whose better-sqlite3 was built for Node
+#     boots straight into recovery mode because it cannot open its own database.
+#
+# Nothing is published: electron-builder's publish config points at upstream,
+# so --publish never is explicit rather than left to a default.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos-arm64:
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    env:
+      # electron-builder's own signing is skipped deliberately; the app is
+      # signed below, in the order macOS requires.
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+
+      - name: Enable the pinned package manager
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.28.2 --activate
+          pnpm --version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test the repository-ref primitive
+        run: |
+          pnpm --filter @emdash/emdash-desktop exec vitest run \
+            src/core/primitives/repository/api/repository-ref.test.ts
+
+      - name: Build all workspace packages
+        # NODE_OPTIONS because V8 sizes its default heap from physical memory:
+        # the macos-14 runner has 7 GB against this workstation's 62 GB, and
+        # without an explicit limit the build dies with a bare
+        # "FATAL ERROR: Reached heap limit" that names nothing.
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: |
+          set -o pipefail
+          pnpm run build 2>&1 | tee /tmp/build.log
+
+      - name: Rebuild native modules against Electron
+        # pnpm's postinstall compiles better-sqlite3 for the *Node* on PATH.
+        # Electron is a different ABI, and a mismatch does not fail the build —
+        # it fails at runtime, silently, landing the app in recovery mode.
+        # This is the project's own script for exactly this.
+        #
+        # The listing is best-effort: pnpm hoists into a virtual store, so the
+        # package is not at apps/emdash-desktop/node_modules, and a non-zero
+        # find would fail the step under `bash -e` despite the rebuild having
+        # succeeded.
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: |
+          pnpm --filter @emdash/emdash-desktop run rebuild
+          echo "--- rebuilt native binaries (informational) ---"
+          find . -name 'better_sqlite3.node' -path '*build*' 2>/dev/null \
+            -exec ls -lh {} \; || true
+
+      - name: Package (unpacked, so we can sign before archiving)
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: |
+          pnpm --filter @emdash/emdash-desktop exec electron-builder \
+            --mac --arm64 --dir --publish never \
+            --config electron-builder.config.ts
+
+      - name: Sign the app
+        # Signed inside-out. `codesign --deep` is explicitly discouraged by
+        # Apple for signing and produces a bundle whose signature verifies with
+        # `codesign --verify` yet is rejected by the kernel at launch with
+        # "Code Signature Invalid / Invalid Page".
+        run: |
+          set -euo pipefail
+          APP=$(find apps/emdash-desktop/release -maxdepth 2 -name '*.app' -type d | head -1)
+          echo "signing: $APP"
+          [ -n "$APP" ] || { echo "no .app produced"; exit 1; }
+
+          FRAMEWORKS="$APP/Contents/Frameworks"
+          ELECTRON="$FRAMEWORKS/Electron Framework.framework/Versions/A"
+
+          # Deepest first: dylibs, then helpers, then the frameworks that
+          # contain them, then the helper apps, then the main executable, and
+          # finally the bundle itself.
+          find "$FRAMEWORKS" -name '*.dylib' -print0 2>/dev/null \
+            | xargs -0 -r -n1 codesign --force --sign - --timestamp=none
+          find "$FRAMEWORKS" -type f -perm -u+x -path '*/Helpers/*' -print0 2>/dev/null \
+            | xargs -0 -r -n1 codesign --force --sign - --timestamp=none
+
+          for fw in "$FRAMEWORKS"/*.framework; do
+            [ -d "$fw" ] && codesign --force --sign - --timestamp=none "$fw"
+          done
+          [ -f "$ELECTRON/Helpers/chrome_crashpad_handler" ] && \
+            codesign --force --sign - --timestamp=none "$ELECTRON/Helpers/chrome_crashpad_handler" || true
+
+          for helper in "$FRAMEWORKS"/*.app; do
+            [ -d "$helper" ] || continue
+            find "$helper/Contents/MacOS" -type f -print0 2>/dev/null \
+              | xargs -0 -r -n1 codesign --force --sign - --timestamp=none
+            codesign --force --sign - --timestamp=none "$helper"
+          done
+
+          codesign --force --sign - --timestamp=none "$APP/Contents/MacOS/Emdash"
+          codesign --force --sign - --timestamp=none "$APP"
+
+          echo "--- verify ---"
+          codesign --verify --verbose=2 "$APP"
+          codesign -dv --verbose=2 "$APP" 2>&1 | grep -E 'Identifier|flags|Sealed'
+
+      - name: Archive the signed app
+        run: |
+          set -euo pipefail
+          APP=$(find apps/emdash-desktop/release -maxdepth 2 -name '*.app' -type d | head -1)
+          # ditto preserves the signature, permissions and symlinks; `zip`
+          # does not.
+          ditto -c -k --sequesterRsrc --keepParent "$APP" /tmp/emdash-arm64-signed.zip
+          ls -lh /tmp/emdash-arm64-signed.zip
+          unzip -l /tmp/emdash-arm64-signed.zip | head -5
+
+      - name: Capture diagnostics
+        if: always()
+        run: |
+          {
+            echo "### environment"
+            node --version; pnpm --version; sw_vers; uname -m
+            echo "### build log"
+            cat /tmp/build.log 2>/dev/null || echo "(no build log)"
+          } > /tmp/diagnostics.log 2>&1
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-diagnostics
+          path: /tmp/diagnostics.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emdash-macos-arm64-signed
+          path: /tmp/emdash-arm64-signed.zip
+          if-no-files-found: error
+          retention-days: 7
